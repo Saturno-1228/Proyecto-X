@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+    <NoWarn>$(NoWarn);CS9057</NoWarn>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <EnableModZip>true</EnableModZip>
+    <EnableModDeploy>true</EnableModDeploy>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Dependencia principal de SMAPI -->
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.1.1" />
+    
+    <!-- Dependencias obligatorias en versiones específicas (.NET 6) para evitar choques con SMAPI -->
+    <PackageReference Include="System.Text.Json" Version="6.0.0" />
+    <PackageReference Include="System.Text.Encodings.Web" Version="6.0.0" />
+    
+    <!-- Nota: Se han eliminado LiteDB, NAudio y Vosk para enfocarnos puramente en la IA de texto inicial -->
+  </ItemGroup>
+</Project>
