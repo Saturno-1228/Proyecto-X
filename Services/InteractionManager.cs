@@ -53,7 +53,12 @@ namespace LivingCompanionsValley.Services
 
                 if (_activeNpc != null)
                 {
-                    StartInteraction(_activeNpc);
+                    // Solo permitimos interactuar si el personaje tiene un archivo de Lore configurado
+                    string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{_activeNpc.Name}.xml");
+                    if (File.Exists(xmlPath))
+                    {
+                        StartInteraction(_activeNpc);
+                    }
                 }
             }
         }
@@ -112,11 +117,16 @@ namespace LivingCompanionsValley.Services
                 var envState = new EnvironmentState { 
                     Weather = Game1.isRaining ? "Lloviendo" : "Soleado", 
                     TimeOfDay = Game1.timeOfDay.ToString(),
-                    CurrentLocation = Game1.player.currentLocation.Name
+                    CurrentLocation = Game1.player.currentLocation.Name,
+                    HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno"
                 };
 
-                // Ensamblar el Prompt Estratégico (Caché friendly)
-                string systemPrompt = _contextBuilder.BuildSystemPrompt(xmlConfig, envState, network.PlayerProfile, new string[0], activeMems);
+                // Extraer el Lore Dinámico usando el TopicRouter (KRS)
+                string[] dynamicLoreChunks = _topicRouter.GetRelevantLoreChunks(npc.Name, playerMessage);
+
+                // Ensamblar el Prompt Estratégico Dividido (Caché friendly máximo)
+                string staticSystemPrompt = _contextBuilder.BuildStaticSystemPrompt(xmlConfig);
+                string dynamicSystemContext = _contextBuilder.BuildDynamicSystemContext(envState, network.PlayerProfile, dynamicLoreChunks, activeMems);
 
                 // Pasamos la memoria de corto plazo (hilo de la conversación limitado a los últimos 10 mensajes / 5 turnos)
                 // Esto evita saturar el límite de tokens de contexto del modelo rápido.
@@ -124,20 +134,22 @@ namespace LivingCompanionsValley.Services
 
                 // --- LOG TEMPORAL PARA DEPURACIÓN ---
                 _logger.Log("\n=================== [DEBUG AI START] ===================", LogLevel.Info);
-                _logger.Log($"[SYSTEM PROMPT ENVIADO]:\n{systemPrompt}\n", LogLevel.Info);
-                _logger.Log("[HISTORIAL DE CONVERSACIÓN ENVIADO]:", LogLevel.Info);
+                _logger.Log($"[STATIC SYSTEM PROMPT ENVIADO (100% CACHE)]:\n{staticSystemPrompt}\n", LogLevel.Info);
+                _logger.Log("[HISTORIAL DE CONVERSACIÓN ENVIADO (100% CACHE)]:", LogLevel.Info);
                 if (chatHistory.Count == 0) _logger.Log("  (Vacío, es el primer mensaje de la sesión)", LogLevel.Info);
                 foreach (var msg in chatHistory)
                 {
                     _logger.Log($"  {msg.Role.ToUpper()}: {msg.Content}", LogLevel.Info);
                 }
+                _logger.Log($"\n[DYNAMIC SYSTEM CONTEXT ENVIADO (FLUCTÚA)]:\n{dynamicSystemContext}\n", LogLevel.Info);
                 _logger.Log($"\n[MENSAJE ACTUAL DEL JUGADOR]: {playerMessage}", LogLevel.Info);
                 _logger.Log("Esperando respuesta de Venice API...", LogLevel.Info);
                 // ------------------------------------
 
                 // Llamar a Venice usando el Modelo Rápido (MiniMax)
                 string response = await _veniceApi.GenerateResponseAsync(
-                    systemPrompt, 
+                    staticSystemPrompt,
+                    dynamicSystemContext,
                     chatHistory, 
                     playerMessage, 
                     VeniceApiService.ChatModel, 
@@ -153,7 +165,7 @@ namespace LivingCompanionsValley.Services
                 int emotionId = 0; // 0 = Neutral por defecto
                 string cleanResponse = response;
                 
-                var match = System.Text.RegularExpressions.Regex.Match(response, @"^\[(\d)\]\s*");
+                var match = System.Text.RegularExpressions.Regex.Match(response, @"^\s*\[(\d+)\]\s*");
                 if (match.Success)
                 {
                     if (int.TryParse(match.Groups[1].Value, out int parsedEmotion))
@@ -220,9 +232,16 @@ namespace LivingCompanionsValley.Services
                 
                 Task.Run(async () => 
                 {
-                    // Tarea pesada con GLM-5, totalmente desacoplada del hilo principal del juego
-                    using var bgCts = new CancellationTokenSource(TimeSpan.FromSeconds(120)); // Damos 2 minutos para el "Thinking"
-                    await _memoryService.ConsolidateMemoriesAsync(npcName, historyToSave, _veniceApi, bgCts.Token);
+                    try
+                    {
+                        // Tarea pesada con GLM-5, totalmente desacoplada del hilo principal del juego
+                        using var bgCts = new CancellationTokenSource(TimeSpan.FromSeconds(120)); // Damos 2 minutos para el "Thinking"
+                        await _memoryService.ConsolidateMemoriesAsync(npcName, historyToSave, _veniceApi, bgCts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Log($"Error interno de consolidación en 2do plano ({npcName}): {ex.Message}", LogLevel.Error);
+                    }
                 });
             }
 

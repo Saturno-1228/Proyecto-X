@@ -83,7 +83,8 @@ namespace LivingCompanionsValley.Services
         /// Soporta Prompt Caching para reducir costos.
         /// </summary>
         public async Task<string> GenerateResponseAsync(
-            string systemPrompt, 
+            string staticSystemPrompt,
+            string dynamicSystemContext,
             List<VeniceMessage>? chatHistory, 
             string currentUserMessage, 
             string modelName, 
@@ -108,8 +109,8 @@ namespace LivingCompanionsValley.Services
                 Reasoning = modelName == ChatModel ? new ReasoningConfig { Enabled = false } : null
             };
 
-            // 1. El System Prompt establece el "cómo" (Reglas, Personalidad, Lore Dinámico, Insights)
-            requestPayload.Messages.Add(new VeniceMessage { Role = "system", Content = systemPrompt });
+            // 1. El System Prompt establece el "cómo" (Reglas, Personalidad, Identidad)
+            requestPayload.Messages.Add(new VeniceMessage { Role = "system", Content = staticSystemPrompt });
 
             // 2. Inyectamos la Memoria a Corto Plazo (Historial reciente)
             if (chatHistory != null)
@@ -117,7 +118,15 @@ namespace LivingCompanionsValley.Services
                 requestPayload.Messages.AddRange(chatHistory);
             }
 
-            // 3. El User Prompt establece el "qué" (La interacción actual)
+            // 3. Inyectamos el Lore Dinámico y Entorno como un segundo mensaje "system" justo antes del user.
+            // Esto asegura que si el Dynamic Context fluctúa (ej. cambia la hora o el topic router añade un keyword),
+            // NO rompe el Prefix Cache de todo el historial de chat anterior ni del Static Prompt.
+            if (!string.IsNullOrWhiteSpace(dynamicSystemContext))
+            {
+                requestPayload.Messages.Add(new VeniceMessage { Role = "system", Content = dynamicSystemContext });
+            }
+
+            // 4. El User Prompt establece el "qué" (La interacción actual)
             requestPayload.Messages.Add(new VeniceMessage { Role = "user", Content = currentUserMessage });
 
             try
@@ -136,6 +145,13 @@ namespace LivingCompanionsValley.Services
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 var root = doc.RootElement;
                 
+                // --- VERIFICACIÓN DE CACHÉ ---
+                // Extraemos el objeto 'usage' para ver cuántos tokens se procesaron y cuántos fueron 'caché'
+                if (root.TryGetProperty("usage", out var usage))
+                {
+                    _logger.Log($"\n[DEBUG CACHE MINIMAX] Uso de Tokens reportado por Venice:\n{usage.GetRawText()}\n", LogLevel.Info);
+                }
+
                 if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
                 {
                     var message = choices[0].GetProperty("message");

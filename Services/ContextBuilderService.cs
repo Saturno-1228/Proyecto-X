@@ -13,6 +13,7 @@ namespace LivingCompanionsValley.Services
         public string CurrentLocation { get; set; } = "Pueblo Pelícano";
         public string CurrentAction { get; set; } = "Caminando";
         public int FriendshipHearts { get; set; } = 0;
+        public string HeldItem { get; set; } = "Ninguno";
     }
 
     /// <summary>
@@ -22,14 +23,9 @@ namespace LivingCompanionsValley.Services
     /// </summary>
     public class ContextBuilderService
     {
-        public string BuildSystemPrompt(
-            string xmlIdentityConfig, 
-            EnvironmentState envState,
-            UserProfile playerProfile, 
-            string[] dynamicLoreChunks,
-            string[] activeMemories)
+        public string BuildStaticSystemPrompt(string xmlIdentityConfig)
         {
-            var sb = new StringBuilder();
+            var sb = new StringBuilder(1024);
 
             // 1. ESTÁTICO (Para optimizar el Prompt Caching de Venice)
             // Esto SIEMPRE debe ir al principio y no cambiar entre turnos.
@@ -37,22 +33,34 @@ namespace LivingCompanionsValley.Services
             sb.AppendLine("REGLA ABSOLUTA 1: Debes responder EXCLUSIVAMENTE en Español. NO uses caracteres chinos, ingleses ni ningún otro idioma.");
             sb.AppendLine("REGLA ABSOLUTA 2: ESTÁ ESTRICTAMENTE PROHIBIDO USAR EMOJIS (como 🐔, :), 💖) en tus respuestas.");
             sb.AppendLine("REGLA DE EMOCIÓN: Siempre debes iniciar tu respuesta con un código de emoción entre corchetes, que representará tu expresión facial.");
-            sb.AppendLine("Usa uno de los siguientes códigos al inicio absoluto de tu mensaje:");
-            sb.AppendLine("[0] Neutral, [1] Enojado/a, [2] Triste, [3] Feliz/Alegre, [4] Sorprendido/Sonrojado, [5] Amoroso/Romántico.");
-            sb.AppendLine("Ejemplo de respuesta válida: [3] ¡Qué gusto verte por aquí hoy!");
+            sb.AppendLine("Usa uno de los siguientes códigos al inicio absoluto de tu mensaje, eligiendo el que mejor represente tu reacción:");
+            sb.AppendLine("[0] Neutral, [1] Feliz/Alegre, [2] Triste, [3] Pensativo/Sorprendido/Único, [4] Enojado/Molesto, [5] Sonrojado/Romántico.");
+            sb.AppendLine("Ejemplo de respuesta válida: [1] ¡Qué gusto verte por aquí hoy!");
             sb.AppendLine("Responde de forma MUY concisa (1 o 2 oraciones) ya que el jugador te lee en una caja de diálogo.");
             sb.AppendLine();
             sb.AppendLine("--- TU IDENTIDAD Y APARIENCIA ---");
             sb.AppendLine(xmlIdentityConfig); // Aquí va el XML: <Identidad>... </Identidad> <Apariencia>... </Apariencia>
-            sb.AppendLine();
+            
+            return sb.ToString();
+        }
 
-            // 2. DINÁMICO (Cambia constantemente, debe ir al final para no romper el caché de lo anterior)
+        public string BuildDynamicSystemContext(
+            EnvironmentState envState,
+            UserProfile playerProfile, 
+            string[] dynamicLoreChunks,
+            string[] activeMemories)
+        {
+            var sb = new StringBuilder(1024);
+
+            // 2. DINÁMICO (Se enviará DESPUÉS del historial de chat para proteger el caché)
             sb.AppendLine("--- ESTADO ACTUAL DEL MUNDO ---");
             sb.AppendLine($"Clima: {envState.Weather}");
             sb.AppendLine($"Hora del día: {envState.TimeOfDay}");
             sb.AppendLine($"Tu ubicación actual: {envState.CurrentLocation}");
             sb.AppendLine($"Lo que estabas haciendo: {envState.CurrentAction}");
             sb.AppendLine($"Nivel de amistad con el jugador: {envState.FriendshipHearts} corazones (sobre 10).");
+            if (envState.HeldItem != "Ninguno")
+                sb.AppendLine($"Objeto que el jugador sostiene en sus manos en este momento: {envState.HeldItem}");
             sb.AppendLine();
 
             // 3. INSIGHTS DEL JUGADOR (Perfil consolidado)

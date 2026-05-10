@@ -1,0 +1,16 @@
+# Carpetas de compilación de Visual Studio y .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Archivos generados por el Sistema Operativo
+.DS_Store
+Thumbs.db
+
+# Configuración local del mod (¡MUY IMPORTANTE PARA PROTEGER SU API KEY!)
+config.json
+
+# Opcional: ignorar el .zip de distribución si lo genera dentro de la carpeta
+*.zip

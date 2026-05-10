@@ -11,6 +11,7 @@ Logramos migrar exitosamente el mod desde una arquitectura acoplada y saturada (
 2. **Fase 2: Optimización de IA (Venice API)**
 3. **Fase 3: Cerebro Orgánico (Memoria)**
 4. **Fase 4: Integración UI, Emociones y Límites de Contexto**
+5. **Fase 5: Motor de Conocimiento Dinámico (Topic-Centric KRS)**
 
 ---
 
@@ -63,6 +64,14 @@ Logramos migrar exitosamente el mod desde una arquitectura acoplada y saturada (
 - **Guillotina de Tokens Removida:** Se aumentó el `MaxTokens` del modelo rápido de chat de 150 a 500 en `VeniceApiService.cs` para evitar truncamientos de oraciones.
 - **Torniquete Cognitivo:** Añadimos `.TakeLast(10)` en `InteractionManager.cs` al historial temporal. La API solo recibe los últimos 5 turnos de diálogo, evitando ahogar la ventana de contexto. El recuerdo a largo plazo sigue protegido por el modelo GLM-5 en segundo plano.
 
+### 9. Motor de Conocimiento Dinámico (Arquitectura Hiper-Granular)
+**Problema:** Almacenar toda la información del mundo en el System Prompt base saturaba la ventana de contexto y los costos. Mezclar la identidad estática del NPC con lo que opina de todos los demás en un solo archivo XML (`Marnie.xml`) creaba documentos gigantescos, propensos a errores y difíciles de mantener.
+**Solución Detallada:**
+- **Diseño Hiper-Granular (Carpetas por NPC):** Creamos un *Knowledge Retrieval System (KRS)* donde cada personaje tiene su propio directorio (`Assets/Knowledge/Marnie/`).
+- **Archivos Individuales por Relación/Tema:** Dentro de esa carpeta, existen subcarpetas (`Relationships/`, `Domain/`) con archivos ultra específicos y separados (ej. `marnie_shane.xml`, `marnie_tienda.xml`). Esto otorga a los desarrolladores espacio infinito para expandir el "cerebro" y el lore del NPC sin ensuciar su identidad base.
+- **Escaneo y Emparejamiento en Tiempo Real:** El `TopicRouterService.cs` carga estos pequeños XML en memoria. Cuando el jugador escribe, el Router busca coincidencias de *Keywords* (ej. "Shane", "sobrino", "cerveza") e inyecta EXCLUSIVAMENTE el archivo `marnie_shane.xml` en la sección de Lore Dinámico del prompt de Minimax. Esto crea un NPC con consciencia profunda de sus vecinos, gastando **cero tokens** en temas que no se están discutiendo.
+- **Consciencia Espacial (Bonus):** Aprovechando la refactorización, expandimos `EnvironmentState` para leer el objeto que el jugador sostiene en sus manos (`Game1.player.ActiveObject`) y enviarlo al contexto, mejorando drásticamente el realismo y las reacciones de la IA a su entorno.
+
 ---
 
 ## 🛠️ Protocolos de Resolución de Errores (Troubleshooting)
@@ -82,7 +91,11 @@ Logramos migrar exitosamente el mod desde una arquitectura acoplada y saturada (
 ### Sistemas que requieren refinamiento (Ya implementados pero crudos):
 1. **Flujo de Rendimiento de Memoria:** Monitorear el tamaño del archivo JSON del jugador. Si las `ForgottenMemories` crecen descontroladamente tras el Año 5 in-game, se deberá implementar "Muerte Neuronal" definitiva tras bajar a fuerza `-0.8`.
 2. **Scroll del Chat Dinámico:** Integrar una "Barra de Desplazamiento Visual" (Scrollbar) a la derecha de la caja para dar mejor feedback visual cuando hay texto oculto.
-3. **Parseo de Emociones Extremo:** Refinar la Expresión Regular para tolerar espacios en blanco por si la IA es rebelde y no pone el número al inicio estricto.
+3. **Parseo de Emociones Extremo:** Refinar la Expresión Regular para tolerar espacios en blanco por si la IA es rebelde y no pone el número al inicio estricto. (Ya implementado).
+4. **Decaimiento y Asimilación de Memoria Diferenciada (Por Edad, Rasgos y Personalidad):** 
+   - El decaimiento actual es un parámetro global temporal y estático para todos. En futuras iteraciones, la tasa de olvido debe calcularse por NPC. 
+   - **Edad (Hiper-realismo cognitivo):** Personajes mayores (como George o Evelyn) tendrán una curva de olvido más pronunciada para eventos triviales (`Episodic`), y requerirán de más repetición para solidificar un recuerdo permanente (`LearnedFact`). Sin embargo, sus anclas emocionales (`EmotionalAnchor`) se mantendrán intactas (olvidan los detalles del día a día, pero no cómo los hiciste sentir).
+   - **Filtro Cognitivo por Personalidad:** Cada personaje interpretará y memorizará un mismo evento de formas radicalmente distintas dependiendo de quién es. Por ejemplo, si el jugador es estricto: un niño (como Vincent o Jas) podría asimilar ese recuerdo etiquetando al jugador como "amargado", mientras que un anciano podría interpretar ese mismo evento como "amabilidad" o "sabiduría". El sistema de consolidación (GLM-5) en segundo plano utilizará la personalidad única del NPC como lente o filtro para decidir *qué* guardar y *cómo* darle peso emocional.
 
 ### Nuevas Funcionalidades Estructurales Planificadas:
 1. **Reactivación Inmersiva por Voz:**

@@ -3,6 +3,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using LivingCompanionsValley.Services;
 using LivingCompanionsValley.Configuration;
+using StardewValley;
 
 namespace LivingCompanionsValley
 {
@@ -29,7 +30,7 @@ namespace LivingCompanionsValley
             var veniceApi = new VeniceApiService(_config.VeniceApiKey, Logger!);
             _memoryService = new MemoryService(helper, Logger!);
             var contextBuilder = new ContextBuilderService();
-            var topicRouter = new TopicRouterService();
+            var topicRouter = new TopicRouterService(helper, Logger!);
             
             // 3. Arrancar el orquestador (InteractionManager automáticamente se suscribe a los botones de la UI)
             _interactionManager = new InteractionManager(helper, Logger!, veniceApi, _memoryService, contextBuilder, topicRouter);
@@ -43,9 +44,15 @@ namespace LivingCompanionsValley
         private void OnDayStarted(object? sender, DayStartedEventArgs e)
         {
             // Ejecutar el decaimiento de Ebbinghaus al inicio de cada día
-            // (En un futuro lo iteraremos por cada NPC activo)
-            _memoryService?.ProcessDailyDecay("Marnie");
-            Logger?.Log("Decaimiento diario de memoria (Ebbinghaus) procesado.", LogLevel.Trace);
+            // Ejecutar el decaimiento de Ebbinghaus al inicio de cada día para todos los aldeanos
+            foreach (var npc in Utility.getAllCharacters())
+            {
+                if (npc.IsVillager)
+                {
+                    _memoryService?.ProcessDailyDecay(npc.Name);
+                }
+            }
+            Logger?.Log("Decaimiento diario de memoria (Ebbinghaus) procesado para todos los NPCs.", LogLevel.Trace);
         }
     }
 }

@@ -52,7 +52,9 @@ namespace LivingCompanionsValley.Services
         /// </summary>
         public NpcMemoryNetwork GetMemoryNetwork(string npcName)
         {
-            var saveKey = $"Memory_{npcName}";
+            // SMAPI exige que la key solo contenga letras, números, guiones bajos, puntos o guiones.
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(npcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            var saveKey = $"Memory_{sanitizedName}";
             var network = _helper.Data.ReadSaveData<NpcMemoryNetwork>(saveKey);
             
             if (network == null)
@@ -67,7 +69,8 @@ namespace LivingCompanionsValley.Services
         /// </summary>
         public void SaveMemoryNetwork(NpcMemoryNetwork network)
         {
-            var saveKey = $"Memory_{network.NpcName}";
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(network.NpcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            var saveKey = $"Memory_{sanitizedName}";
             _helper.Data.WriteSaveData(saveKey, network);
         }
 
@@ -78,6 +81,13 @@ namespace LivingCompanionsValley.Services
         /// </summary>
         public void ProcessDailyDecay(string npcName)
         {
+            // Evitar crear/procesar memorias para caballos, mascotas o NPCs no soportados
+            string xmlPath = System.IO.Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
+            if (!System.IO.File.Exists(xmlPath))
+            {
+                return;
+            }
+
             var network = GetMemoryNetwork(npcName);
             var memoriesToForget = new List<NpcMemory>();
 
@@ -207,7 +217,7 @@ INSTRUCCIÓN FINAL: Después de concluir tu bloque de pensamiento <thinking_prot
             var stopwatch = Stopwatch.StartNew();
             
             // Hacemos la llamada al modelo pesado (ThinkingModel)
-            var jsonResponse = await veniceApi.GenerateResponseAsync(systemPrompt, null, "Historial de la charla a procesar:\n" + rawChatHistory, VeniceApiService.ThinkingModel, null, ct);
+            var jsonResponse = await veniceApi.GenerateResponseAsync(systemPrompt, "", null, "Historial de la charla a procesar:\n" + rawChatHistory, VeniceApiService.ThinkingModel, null, ct);
             
             stopwatch.Stop();
             _logger.Log($"[{npcName}] Tiempo total de 'Thinking' y generación de GLM-5: {stopwatch.Elapsed.TotalSeconds:F2} segundos.", LogLevel.Info);

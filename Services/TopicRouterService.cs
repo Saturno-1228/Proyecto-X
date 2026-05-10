@@ -1,50 +1,83 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Linq;
+using System.Xml.Serialization;
+using StardewModdingAPI;
+using LivingCompanionsValley.Models;
 
 namespace LivingCompanionsValley.Services
 {
-    /// <summary>
-    /// Clasifica el mensaje del jugador (Paso A) y extrae el Lore/Memorias relevantes (Paso B).
-    /// </summary>
     public class TopicRouterService
     {
-        // En un futuro, esto puede usar un LLM muy ligero local o reglas regex avanzadas.
-        // Por ahora, usaremos un mock simple para probar la arquitectura.
-        
-        /// <summary>
-        /// Dado un mensaje de entrada, devuelve una lista de tags o temas detectados.
-        /// </summary>
-        public List<string> DetectTopics(string userMessage)
+        private readonly IModHelper _helper;
+        private readonly IMonitor _logger;
+
+        // Cache de conocimientos por NPC. Dict<NpcName, List<KnowledgeTopic>>
+        private Dictionary<string, List<KnowledgeTopic>> _knowledgeCache = new Dictionary<string, List<KnowledgeTopic>>();
+
+        public TopicRouterService(IModHelper helper, IMonitor logger)
         {
-            var topics = new List<string>();
-            var msg = userMessage.ToLowerInvariant();
-
-            if (msg.Contains("mina") || msg.Contains("mineral") || msg.Contains("cobre"))
-                topics.Add("mining");
-            
-            if (msg.Contains("vaca") || msg.Contains("gallina") || msg.Contains("animal"))
-                topics.Add("animals");
-
-            if (msg.Contains("regalo") || msg.Contains("toma esto"))
-                topics.Add("gifts");
-
-            return topics;
+            _helper = helper;
+            _logger = logger;
         }
 
-        /// <summary>
-        /// Recupera el lore estático usando los temas detectados.
-        /// </summary>
-        public string[] GetRelevantLoreChunks(string npcName, List<string> topics)
+        private void EnsureNpcKnowledgeLoaded(string npcName)
         {
-            // TODO: Buscar en el JSON cargado en memoria los fragmentos que hagan match con 'topics'.
-            // Simulación:
-            if (topics.Contains("animals") && npcName == "Marnie")
+            if (_knowledgeCache.ContainsKey(npcName)) return;
+
+            var topics = new List<KnowledgeTopic>();
+            string npcKnowledgePath = Path.Combine(_helper.DirectoryPath, "Assets", "Knowledge", npcName);
+
+            if (Directory.Exists(npcKnowledgePath))
             {
-                return new[] { "Marnie ama a sus vacas más que a nada. Vende animales en su rancho al sur de la granja del jugador." };
+                var xmlFiles = Directory.GetFiles(npcKnowledgePath, "*.xml", SearchOption.AllDirectories);
+                var serializer = new XmlSerializer(typeof(KnowledgeTopic));
+
+                foreach (var file in xmlFiles)
+                {
+                    try
+                    {
+                        using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read))
+                        {
+                            if (serializer.Deserialize(stream) is KnowledgeTopic topic)
+                            {
+                                topics.Add(topic);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Log($"Error cargando conocimiento desde {file}: {ex.Message}", LogLevel.Error);
+                    }
+                }
             }
 
-            return Array.Empty<string>();
+            _knowledgeCache[npcName] = topics;
+            _logger.Log($"Se cargaron {topics.Count} temas de conocimiento para {npcName}.", LogLevel.Trace);
+        }
+
+        public string[] GetRelevantLoreChunks(string npcName, string userMessage)
+        {
+            EnsureNpcKnowledgeLoaded(npcName);
+            
+            var msg = userMessage.ToLowerInvariant();
+            var matchedLore = new List<string>();
+
+            if (_knowledgeCache.TryGetValue(npcName, out var topics))
+            {
+                foreach (var topic in topics)
+                {
+                    var keywords = topic.Keywords.Split(',').Select(k => k.Trim().ToLowerInvariant());
+                    if (keywords.Any(k => msg.Contains(k)))
+                    {
+                        matchedLore.Add(topic.Lore.Trim());
+                        _logger.Log($"[{npcName}] Keyword detectada para el tema: {topic.Id}", LogLevel.Debug);
+                    }
+                }
+            }
+
+            return matchedLore.ToArray();
         }
     }
 }
