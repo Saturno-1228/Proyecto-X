@@ -287,7 +287,7 @@ namespace LivingCompanionsValley.UI
             if (_npc != null && _npc.Portrait != null)
             {
                 // El retrato nativo va ADENTRO del DialogueBox, a la derecha. (Alineado al interior del borde)
-                int portraitBoxX = this.xPositionOnScreen + this.width - 460 - 4; // 115 * 4 = 460, menos margen borde
+                int portraitBoxX = this.xPositionOnScreen + this.width - 460 - 4; 
                 
                 // Caja de fondo del retrato (Portrait Plate)
                 b.Draw(Game1.mouseCursors, 
@@ -295,10 +295,21 @@ namespace LivingCompanionsValley.UI
                     new Rectangle(583, 411, 115, 97), 
                     Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.8f);
                 
-                // Dibujo exacto del Retrato usando la emoción
-                b.Draw(_npc.Portrait, 
+                Texture2D textureToDraw = _npc.Portrait;
+                Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, this.CurrentEmotion, 64, 64);
+                
+                // --- PROTECCIÓN MATEMÁTICA CONTRA PANTALLAS ROSAS ---
+                // Si la IA pide una emoción (como la 5) y la imagen no es lo suficientemente grande,
+                // usamos la cara neutral (0) para evitar cuadros rosas o crashes.
+                if (!textureToDraw.Bounds.Contains(sourceRect))
+                {
+                    sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, 0, 64, 64);
+                }
+
+                // Dibujo exacto del Retrato 
+                b.Draw(textureToDraw, 
                     new Vector2(portraitBoxX + 104, this.yPositionOnScreen + 48), // Offset para centrar en el Portrait Plate
-                    new Rectangle?(Game1.getSourceRectForStandardTileSheet(_npc.Portrait, this.CurrentEmotion, 64, 64)), 
+                    new Rectangle?(sourceRect), 
                     Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
                 
                 // Renderizado del Nameplate (bajado ~4% del original)
@@ -441,7 +452,6 @@ namespace LivingCompanionsValley.UI
                     _globalTextIndex += remaining;
                     _typewriterIndex = _aiResponseText.Length;
                 }
-                // Si ya terminó de escribir, no hacemos nada (el auto-avance lo cambiará solo)
             }
         }
     }
