@@ -105,7 +105,7 @@ namespace LivingCompanionsValley.Services
             {
                 Model = modelName,
                 PromptCacheKey = cacheKey,
-                MaxTokens = modelName == ChatModel ? 500 : 5000, 
+                MaxTokens = modelName == ChatModel ? 2000 : 5000, 
                 Temperature = 0.7,
                 VeniceParameters = new VeniceParameters { IncludeVeniceSystemPrompt = false },
                 
