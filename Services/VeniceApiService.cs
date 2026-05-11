@@ -30,7 +30,12 @@ namespace LivingCompanionsValley.Services
     public class ReasoningConfig
     {
         [JsonPropertyName("enabled")]
-        public bool Enabled { get; set; } = false;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public bool? Enabled { get; set; }
+
+        [JsonPropertyName("effort")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Effort { get; set; }
     }
 
     public class VeniceRequest
@@ -66,9 +71,9 @@ namespace LivingCompanionsValley.Services
         private readonly IMonitor _logger;
         private const string ApiUrl = "https://api.venice.ai/api/v1/chat/completions";
 
-        // Arquitectura Dual-Model (Actualizada con modelos que soportan Prompt Caching)
-        public const string ChatModel = "minimax-m25"; // Soporta Caching para 90% descuento.
-        public const string ThinkingModel = "zai-org-glm-5"; // Pesado para extraer memoria y perfiles
+        // Arquitectura Dual-Model
+        public const string ChatModel = "minimax-m25"; // Soporta Caching
+        public const string ThinkingModel = "zai-org-glm-5"; // Modelo para consolidación
 
         public VeniceApiService(string apiKey, IMonitor logger)
         {
@@ -79,8 +84,7 @@ namespace LivingCompanionsValley.Services
         }
 
         /// <summary>
-        /// Envía una consulta a Venice API, respetando la estructura estricta de System Prompt y User Prompt.
-        /// Soporta Prompt Caching para reducir costos.
+        /// Genera respuesta usando el sistema de sándwich para optimizar el caché y aplica razonamiento medio en chat.
         /// </summary>
         public async Task<string> GenerateResponseAsync(
             string staticSystemPrompt,
@@ -101,32 +105,30 @@ namespace LivingCompanionsValley.Services
             {
                 Model = modelName,
                 PromptCacheKey = cacheKey,
-                // El modelo de Chat usa menos tokens para ser rápido, pero el modelo Thinking necesita MUCHOS tokens para generar el bloque <think> y luego el JSON.
                 MaxTokens = modelName == ChatModel ? 500 : 5000, 
                 Temperature = 0.7,
                 VeniceParameters = new VeniceParameters { IncludeVeniceSystemPrompt = false },
-                // Desactivamos el razonamiento en el chat para obtener la máxima velocidad posible
-                Reasoning = modelName == ChatModel ? new ReasoningConfig { Enabled = false } : null
+                
+                // Configuración de razonamiento: "medium" para el modelo de chat
+                Reasoning = modelName == ChatModel ? new ReasoningConfig { Effort = "medium" } : null
             };
 
-            // 1. El System Prompt establece el "cómo" (Reglas, Personalidad, Identidad)
+            // 1. Capa Estática: Identidad y Reglas (Base del Caché)
             requestPayload.Messages.Add(new VeniceMessage { Role = "system", Content = staticSystemPrompt });
 
-            // 2. Inyectamos la Memoria a Corto Plazo (Historial reciente)
+            // 2. Capa de Memoria: Historial de chat (Crece linealmente)
             if (chatHistory != null)
             {
                 requestPayload.Messages.AddRange(chatHistory);
             }
 
-            // 3. Inyectamos el Lore Dinámico y Entorno como un segundo mensaje "system" justo antes del user.
-            // Esto asegura que si el Dynamic Context fluctúa (ej. cambia la hora o el topic router añade un keyword),
-            // NO rompe el Prefix Cache de todo el historial de chat anterior ni del Static Prompt.
+            // 3. Capa Dinámica: Contexto cambiante (Evita romper el caché previo)
             if (!string.IsNullOrWhiteSpace(dynamicSystemContext))
             {
                 requestPayload.Messages.Add(new VeniceMessage { Role = "system", Content = dynamicSystemContext });
             }
 
-            // 4. El User Prompt establece el "qué" (La interacción actual)
+            // 4. Mensaje del Usuario
             requestPayload.Messages.Add(new VeniceMessage { Role = "user", Content = currentUserMessage });
 
             try
@@ -145,11 +147,10 @@ namespace LivingCompanionsValley.Services
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 var root = doc.RootElement;
                 
-                // --- VERIFICACIÓN DE CACHÉ ---
-                // Extraemos el objeto 'usage' para ver cuántos tokens se procesaron y cuántos fueron 'caché'
+                // Registro de métricas de uso y caché
                 if (root.TryGetProperty("usage", out var usage))
                 {
-                    _logger.Log($"\n[DEBUG CACHE MINIMAX] Uso de Tokens reportado por Venice:\n{usage.GetRawText()}\n", LogLevel.Info);
+                    _logger.Log($"\n[DEBUG CACHE MINIMAX] Uso de Tokens:\n{usage.GetRawText()}\n", LogLevel.Info);
                 }
 
                 if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
@@ -158,11 +159,10 @@ namespace LivingCompanionsValley.Services
                     return message.GetProperty("content").GetString()?.Trim() ?? "[Respuesta vacía]";
                 }
                 
-                return "[Formato de respuesta desconocido]";
+                return "[Formato desconocido]";
             }
             catch (TaskCanceledException)
             {
-                _logger.Log("La llamada a Venice API fue cancelada (probablemente el jugador se alejó).", LogLevel.Info);
                 return "[Cancelado]";
             }
             catch (Exception ex)

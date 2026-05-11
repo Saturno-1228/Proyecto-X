@@ -38,7 +38,7 @@ namespace LivingCompanionsValley.UI
         // --- Variables del Auto-Scroll Chat ---
         private string _fullChatText = "";
         private List<string> _wrappedLines = new List<string>();
-        private int _maxVisibleLines = 2; // Reducido para que la altura de la caja sea ~70% de la original
+        private int _maxVisibleLines = 3;
         private int _currentScrollIndex = 0;
         private int _chatBoxBaseY; 
         private int _chatBoxX;
@@ -87,7 +87,7 @@ namespace LivingCompanionsValley.UI
             // Base para el chat box dinámico
             _chatBoxWidth = this.width - 484; // Igual al ancho del texto
             _chatBoxX = this.xPositionOnScreen - 4; // Ajuste microscópico: 1% más a la izquierda
-            _chatBoxBaseY = this.yPositionOnScreen + this.height + 116; // Ajustado 3% más abajo
+            _chatBoxBaseY = this.yPositionOnScreen + this.height + 104; // Ajuste microscópico: 2% más abajo
         }
 
         private void HandleEnterPressed(TextBox sender)
