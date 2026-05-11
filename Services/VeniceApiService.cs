@@ -72,7 +72,7 @@ namespace LivingCompanionsValley.Services
         private const string ApiUrl = "https://api.venice.ai/api/v1/chat/completions";
 
         // Arquitectura Dual-Model
-        public const string ChatModel = "minimax-m25"; // Soporta Caching
+        public const string ChatModel = "kimi-k2-5"; // Nuevo modelo rápido con caché y razonamiento
         public const string ThinkingModel = "zai-org-glm-5"; // Modelo para consolidación
 
         public VeniceApiService(string apiKey, IMonitor logger)
@@ -150,7 +150,7 @@ namespace LivingCompanionsValley.Services
                 // Registro de métricas de uso y caché
                 if (root.TryGetProperty("usage", out var usage))
                 {
-                    _logger.Log($"\n[DEBUG CACHE MINIMAX] Uso de Tokens:\n{usage.GetRawText()}\n", LogLevel.Info);
+                    _logger.Log($"\n[DEBUG CACHE KIMI] Uso de Tokens:\n{usage.GetRawText()}\n", LogLevel.Info);
                 }
 
                 if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
