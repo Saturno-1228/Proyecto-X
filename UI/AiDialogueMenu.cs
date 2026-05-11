@@ -26,12 +26,19 @@ namespace LivingCompanionsValley.UI
         // Efecto Typewriter
         private int _typewriterIndex = 0;
         private double _typewriterTimer = 0;
-        private const double TypewriterSpeedMs = 30.0;
+        private const double TypewriterSpeedMs = 35.0; // 15% más lento que antes (30.0 -> 35.0)
+        private double _autoPageDelayTimer = 0;
+
+        // --- Variables de Paginación y Emociones Dinámicas ---
+        private List<string> _pages = new List<string>();
+        private int _currentPageIndex = 0;
+        private Dictionary<int, int> _emotionKeyframes = new Dictionary<int, int>();
+        private int _globalTextIndex = 0;
 
         // --- Variables del Auto-Scroll Chat ---
         private string _fullChatText = "";
         private List<string> _wrappedLines = new List<string>();
-        private int _maxVisibleLines = 3;
+        private int _maxVisibleLines = 2; // Reducido para que la altura de la caja sea ~70% de la original
         private int _currentScrollIndex = 0;
         private int _chatBoxBaseY; 
         private int _chatBoxX;
@@ -69,17 +76,18 @@ namespace LivingCompanionsValley.UI
 
         private void CalculateLayout()
         {
-            // Coordenadas nativas de Stardew Valley DialogueBox
+            // Coordenadas nativas exactas extraídas del descompilado
             this.width = Math.Min(1200, Game1.uiViewport.Width - 64);
             this.height = Game1.tileSize * 6; // 384px
 
-            this.xPositionOnScreen = (Game1.uiViewport.Width - this.width) / 2;
-            this.yPositionOnScreen = Game1.uiViewport.Height - this.height - 120; // 120px de margen inferior
+            this.xPositionOnScreen = (int)Utility.getTopLeftPositionForCenteringOnScreen(this.width, this.height).X;
+            // Subimos toda la interfaz maestra restando más margen inferior (~5% de la pantalla)
+            this.yPositionOnScreen = Game1.uiViewport.Height - this.height - 124; 
 
-            // Base para el chat box dinámico, flotando debajo de la caja principal
-            _chatBoxWidth = this.width - 296 - 16; // Restamos el ancho del retrato para que no lo pise
-            _chatBoxX = this.xPositionOnScreen + 32;
-            _chatBoxBaseY = this.yPositionOnScreen + this.height + 64; // Creciendo desde un poco más abajo
+            // Base para el chat box dinámico
+            _chatBoxWidth = this.width - 484; // Igual al ancho del texto
+            _chatBoxX = this.xPositionOnScreen - 4; // Ajuste microscópico: 1% más a la izquierda
+            _chatBoxBaseY = this.yPositionOnScreen + this.height + 116; // Ajustado 3% más abajo
         }
 
         private void HandleEnterPressed(TextBox sender)
@@ -100,12 +108,72 @@ namespace LivingCompanionsValley.UI
             sender.Selected = false;
         }
 
-        public void ReceiveAiResponse(string response)
+        public void ReceiveAiResponse(string rawResponse)
         {
             _isThinking = false;
-            _aiResponseText = response;
-            _typewriterIndex = 0;
+            ProcessAiText(rawResponse);
             _textBox.Selected = true; 
+        }
+
+        private void ProcessAiText(string rawText)
+        {
+            _emotionKeyframes.Clear();
+            _pages.Clear();
+            _currentPageIndex = 0;
+            _typewriterIndex = 0;
+            _globalTextIndex = 0;
+            CurrentEmotion = 0;
+
+            string cleanText = "";
+            int cleanIndex = 0;
+            
+            // 1. Encontrar todas las etiquetas [X] en el texto
+            var matches = System.Text.RegularExpressions.Regex.Matches(rawText, @"\[(\d+)\]");
+            int lastPos = 0;
+
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                // Unir el texto limpio antes de esta etiqueta
+                string textPart = rawText.Substring(lastPos, match.Index - lastPos);
+                cleanText += textPart;
+                cleanIndex += textPart.Length;
+
+                // Guardar el cambio de emoción en el índice exacto de la letra donde debe ocurrir
+                if (int.TryParse(match.Groups[1].Value, out int emotion))
+                {
+                    _emotionKeyframes[cleanIndex] = emotion;
+                }
+                lastPos = match.Index + match.Length;
+            }
+            // Añadir el resto del texto final
+            cleanText += rawText.Substring(lastPos);
+
+            // Si la IA empezó con una emoción en el índice 0, la activamos de inmediato
+            if (_emotionKeyframes.ContainsKey(0)) CurrentEmotion = _emotionKeyframes[0];
+
+            // 2. Paginación nativa automática
+            // Ajustamos el width restando 484px (ancho del Portrait Plate + 24 de margen de seguridad)
+            string parsedString = Game1.parseText(cleanText.Trim(), Game1.dialogueFont, this.width - 484);
+            string[] lines = parsedString.Split('\n');
+            
+            string currentPage = "";
+            int lineCount = 0;
+
+            foreach (string line in lines)
+            {
+                if (lineCount >= 4) // Límite de 4 líneas por caja de diálogo (Página)
+                {
+                    _pages.Add(currentPage.TrimEnd());
+                    currentPage = "";
+                    lineCount = 0;
+                }
+                currentPage += line + "\n";
+                lineCount++;
+            }
+            if (!string.IsNullOrWhiteSpace(currentPage)) _pages.Add(currentPage.TrimEnd());
+            if (_pages.Count == 0) _pages.Add("...");
+            
+            _aiResponseText = _pages[0];
         }
 
         public override void receiveKeyPress(Keys key)
@@ -143,16 +211,37 @@ namespace LivingCompanionsValley.UI
                     _currentScrollIndex = 0;
             }
 
-            if (!_isThinking && !string.IsNullOrEmpty(_aiResponseText) && _typewriterIndex < _aiResponseText.Length)
+            if (!_isThinking && _pages.Count > 0 && _currentPageIndex < _pages.Count)
             {
-                _typewriterTimer += time.ElapsedGameTime.TotalMilliseconds;
-                if (_typewriterTimer >= TypewriterSpeedMs)
+                if (_typewriterIndex < _aiResponseText.Length)
                 {
-                    _typewriterIndex++;
-                    _typewriterTimer = 0;
-                    
-                    if (_typewriterIndex % 3 == 0) 
-                        Game1.playSound("dialogueCharacter");
+                    _typewriterTimer += time.ElapsedGameTime.TotalMilliseconds;
+                    if (_typewriterTimer >= TypewriterSpeedMs)
+                    {
+                        _typewriterIndex++;
+                        _globalTextIndex++;
+                        _typewriterTimer = 0;
+                        
+                        if (_emotionKeyframes.ContainsKey(_globalTextIndex))
+                        {
+                            CurrentEmotion = _emotionKeyframes[_globalTextIndex];
+                        }
+
+                        if (_typewriterIndex % 3 == 0) 
+                            Game1.playSound("dialogueCharacter");
+                    }
+                }
+                else if (_currentPageIndex < _pages.Count - 1)
+                {
+                    // Auto-avance de página automático tras finalizar el texto
+                    _autoPageDelayTimer += time.ElapsedGameTime.TotalMilliseconds;
+                    if (_autoPageDelayTimer >= 1800.0) // 1.8 segundos para leer la página antes de saltar
+                    {
+                        _currentPageIndex++;
+                        _aiResponseText = _pages[_currentPageIndex];
+                        _typewriterIndex = 0;
+                        _autoPageDelayTimer = 0;
+                    }
                 }
             }
         }
@@ -192,37 +281,45 @@ namespace LivingCompanionsValley.UI
             // ============================================================
             
             // Caja de Diálogo Principal
-            IClickableMenu.drawTextureBox(b, Game1.menuTexture, new Rectangle(0, 256, 60, 60), 
-                this.xPositionOnScreen, this.yPositionOnScreen, this.width, this.height, 
-                Color.White, 1f, true, 0.8f);
+            DrawNativeBox(b, this.xPositionOnScreen, this.yPositionOnScreen, this.width, this.height);
 
-            // Renderizado del Retrato y Nombre
+            // Renderizado del Retrato, Nombre y Joya
             if (_npc != null && _npc.Portrait != null)
             {
-                int portraitBoxX = this.xPositionOnScreen + this.width + 8;
+                // El retrato nativo va ADENTRO del DialogueBox, a la derecha. (Alineado al interior del borde)
+                int portraitBoxX = this.xPositionOnScreen + this.width - 460 - 4; // 115 * 4 = 460, menos margen borde
                 
-                // Caja de fondo del retrato
-                IClickableMenu.drawTextureBox(b, Game1.menuTexture, new Rectangle(0, 256, 60, 60), 
-                    portraitBoxX, this.yPositionOnScreen, 296, 296, Color.White, 1f, true, 0.8f);
+                // Caja de fondo del retrato (Portrait Plate)
+                b.Draw(Game1.mouseCursors, 
+                    new Vector2(portraitBoxX, this.yPositionOnScreen + 4), 
+                    new Rectangle(583, 411, 115, 97), 
+                    Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.8f);
                 
                 // Dibujo exacto del Retrato usando la emoción
                 b.Draw(_npc.Portrait, 
-                    new Vector2(portraitBoxX + 20, this.yPositionOnScreen + 20), 
+                    new Vector2(portraitBoxX + 104, this.yPositionOnScreen + 48), // Offset para centrar en el Portrait Plate
                     new Rectangle?(Game1.getSourceRectForStandardTileSheet(_npc.Portrait, this.CurrentEmotion, 64, 64)), 
                     Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
                 
-                // Renderizado del Nameplate
-                SpriteFont nameFont = Game1.dialogueFont;
-                string npcName = _npc.getName();
-                Vector2 nameSize = nameFont.MeasureString(npcName);
-                
-                IClickableMenu.drawTextureBox(b, Game1.menuTexture, new Rectangle(0, 256, 60, 60), 
-                    this.xPositionOnScreen - 8, this.yPositionOnScreen - 56, (int)nameSize.X + 48, 72, 
-                    Color.White, 1f, true, 0.8f);
+                // Renderizado del Nameplate (bajado ~4% del original)
+                StardewValley.BellsAndWhistles.SpriteText.drawStringHorizontallyCenteredAt(
+                    b, _npc.getName(), portraitBoxX + 230, this.yPositionOnScreen + 324);
                     
-                Utility.drawTextWithShadow(b, npcName, nameFont, 
-                    new Vector2(this.xPositionOnScreen + 16, this.yPositionOnScreen - 40), 
-                    Game1.textColor, 1f, -1f, -1, -1, 1f, 3);
+                // Joya de Amistad Animada
+                Rectangle jewelSource;
+                if (Game1.player.getFriendshipHeartLevelForNPC(_npc.Name) >= 10) {
+                    jewelSource = new Rectangle(269, 494, 11, 11); // Gema de 10 corazones estática
+                } else {
+                    int frameOffset = (int)(Game1.currentGameTime.TotalGameTime.TotalMilliseconds % 1000.0 / 250.0) * 11;
+                    int heartRow = (Game1.player.getFriendshipHeartLevelForNPC(_npc.Name) / 2) * 11;
+                    jewelSource = new Rectangle(140 + frameOffset, 532 + heartRow, 11, 11);
+                }
+                
+                // Dibujar joya de amistad
+                b.Draw(Game1.mouseCursors, 
+                    new Vector2(portraitBoxX + 24, this.yPositionOnScreen + 24), 
+                    new Rectangle?(jewelSource), 
+                    Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.89f);
             }
 
             // ============================================================
@@ -239,10 +336,8 @@ namespace LivingCompanionsValley.UI
             {
                 string visibleText = _aiResponseText.Substring(0, Math.Min(_typewriterIndex, _aiResponseText.Length));
                 
-                // Usar el ancho completo menos un poco de margen para el texto nativo
-                string parsedText = Game1.parseText(visibleText, Game1.dialogueFont, this.width - 64);
-                
-                Utility.drawTextWithShadow(b, parsedText, Game1.dialogueFont, 
+                // El texto ya fue parseado y paginado en ProcessAiText, lo dibujamos directamente
+                Utility.drawTextWithShadow(b, visibleText, Game1.dialogueFont, 
                     new Vector2(this.xPositionOnScreen + 32, this.yPositionOnScreen + 32), 
                     Game1.textColor, 1f, -1f, -1, -1, 1f, 3);
 
@@ -268,9 +363,7 @@ namespace LivingCompanionsValley.UI
             int currentTopY = _chatBoxBaseY - _chatBoxHeight;
 
             // Renderizado visual del chatbox
-            Texture2D tbTexture = Game1.content.Load<Texture2D>("LooseSprites\\textBox");
-            IClickableMenu.drawTextureBox(b, tbTexture, new Rectangle(0, 0, tbTexture.Width, tbTexture.Height),
-                _chatBoxX, currentTopY, _chatBoxWidth, _chatBoxHeight, Color.White, 1f, true, 0.89f);
+            DrawNativeBox(b, _chatBoxX, currentTopY, _chatBoxWidth, _chatBoxHeight);
 
             for (int i = 0; i < visibleLinesCount; i++)
             {
@@ -308,10 +401,48 @@ namespace LivingCompanionsValley.UI
             base.performHoverAction(x, y);
         }
 
+        public void DrawNativeBox(SpriteBatch b, int xPos, int yPos, int boxWidth, int boxHeight)
+        {
+            // 1. Centro (Textura de madera)
+            b.Draw(Game1.mouseCursors, new Rectangle(xPos, yPos, boxWidth, boxHeight), new Rectangle(306, 320, 16, 16), Color.White);
+            
+            // 2. Bordes (Se dibujan con offsets negativos para sobresalir de la caja central)
+            b.Draw(Game1.mouseCursors, new Rectangle(xPos, yPos - 20, boxWidth, 24), new Rectangle(275, 313, 1, 6), Color.White); // Arriba
+            b.Draw(Game1.mouseCursors, new Rectangle(xPos + 12, yPos + boxHeight, boxWidth - 20, 32), new Rectangle(275, 328, 1, 8), Color.White); // Abajo
+            b.Draw(Game1.mouseCursors, new Rectangle(xPos - 32, yPos + 24, 32, boxHeight - 28), new Rectangle(264, 325, 8, 1), Color.White); // Izquierda
+            b.Draw(Game1.mouseCursors, new Rectangle(xPos + boxWidth, yPos, 28, boxHeight), new Rectangle(293, 324, 7, 1), Color.White); // Derecha
+            
+            // 3. Esquinas (Piezas únicas con escala de 4f)
+            b.Draw(Game1.mouseCursors, new Vector2(xPos - 44, yPos - 28), new Rectangle(261, 311, 14, 13), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.87f); // Superior Izq
+            b.Draw(Game1.mouseCursors, new Vector2(xPos + boxWidth - 8, yPos - 28), new Rectangle(291, 311, 12, 11), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.87f); // Superior Der
+            b.Draw(Game1.mouseCursors, new Vector2(xPos + boxWidth - 8, yPos + boxHeight - 8), new Rectangle(291, 326, 12, 12), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.87f); // Inferior Der
+            b.Draw(Game1.mouseCursors, new Vector2(xPos - 44, yPos + boxHeight - 4), new Rectangle(261, 327, 14, 11), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.87f); // Inferior Izq
+        }
+
         public override void receiveLeftClick(int x, int y, bool playSound = true)
         {
             base.receiveLeftClick(x, y, playSound);
             _textBox.Selected = true; 
+            
+            if (!_isThinking && _pages.Count > 0)
+            {
+                if (_typewriterIndex < _aiResponseText.Length)
+                {
+                    // Clic para saltar el efecto de máquina de escribir (Autocompletar la página actual)
+                    int remaining = _aiResponseText.Length - _typewriterIndex;
+                    
+                    // Procesar instantáneamente todas las emociones que estaban pendientes en esta página
+                    for (int i = 0; i <= remaining; i++)
+                    {
+                        if (_emotionKeyframes.ContainsKey(_globalTextIndex + i))
+                            CurrentEmotion = _emotionKeyframes[_globalTextIndex + i];
+                    }
+                    
+                    _globalTextIndex += remaining;
+                    _typewriterIndex = _aiResponseText.Length;
+                }
+                // Si ya terminó de escribir, no hacemos nada (el auto-avance lo cambiará solo)
+            }
         }
     }
 }

@@ -161,35 +161,18 @@ namespace LivingCompanionsValley.Services
                 _logger.Log("=================== [DEBUG AI END] ===================\n", LogLevel.Info);
                 // ---------------------------------
 
-                // Extraer la emoción [X] de la respuesta
-                int emotionId = 0; // 0 = Neutral por defecto
-                string cleanResponse = response;
-                
-                var match = System.Text.RegularExpressions.Regex.Match(response, @"^\s*\[(\d+)\]\s*");
-                if (match.Success)
-                {
-                    if (int.TryParse(match.Groups[1].Value, out int parsedEmotion))
-                    {
-                        emotionId = parsedEmotion;
-                    }
-                    cleanResponse = response.Substring(match.Length).Trim();
-                }
-
-                if (string.IsNullOrWhiteSpace(cleanResponse))
-                {
-                    cleanResponse = "..."; // Salvaguardia si la IA devuelve vacío por filtros de seguridad
-                }
+                // Extraer la respuesta cruda, asegurando que no esté vacía
+                string cleanResponse = string.IsNullOrWhiteSpace(response) ? "..." : response;
 
                 _currentSessionChatHistory += $"{npc.Name}: {cleanResponse}\n";
 
-                // Guardamos el intercambio en la memoria de la sesión
+                // Guardamos el intercambio en la memoria de la sesión con todo y etiquetas
                 _sessionMessages.Add(new VeniceMessage { Role = "user", Content = playerMessage });
-                _sessionMessages.Add(new VeniceMessage { Role = "assistant", Content = response }); // Guardamos la original con el tag para que la IA sepa que lo está haciendo bien
+                _sessionMessages.Add(new VeniceMessage { Role = "assistant", Content = cleanResponse }); 
 
-                // Enviar la respuesta a la UI para el efecto Typewriter
+                // Enviar la respuesta CRUDA a la UI. El menú hará la magia del parseo.
                 if (Game1.activeClickableMenu is AiDialogueMenu menu)
                 {
-                    menu.CurrentEmotion = emotionId; // Pasamos la emoción extraída al menú para que cambie el retrato
                     menu.ReceiveAiResponse(cleanResponse);
                 }
             }
