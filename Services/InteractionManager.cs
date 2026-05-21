@@ -34,6 +34,7 @@ namespace LivingCompanionsValley.Services
         // Manejo de conexión y modo Offline
         private bool _isOfflineCooldownActive = false;
         private DateTime _offlineCooldownExpiration;
+        private DateTime _lastInteractionTime = DateTime.MinValue;
 
         // Cache de optimización Zero-I/O
         private Dictionary<string, string> _identityCache = new Dictionary<string, string>();
@@ -114,6 +115,7 @@ namespace LivingCompanionsValley.Services
             _activeNpc = npc;
             _currentSessionChatHistory = "";
             _sessionMessages.Clear();
+            _lastInteractionTime = DateTime.Now;
 
             _logger.Log($"Iniciando interacción con {npc.Name}", LogLevel.Debug);
 
@@ -301,6 +303,12 @@ namespace LivingCompanionsValley.Services
             // Interceptar cajas de diálogo vanilla al hacer Clic Derecho
             if (e.NewMenu is DialogueBox dialogueBox && dialogueBox.characterDialogue != null)
             {
+                // Evitar doble intercepción si ya estamos interactuando o acabamos de cerrar una UI
+                if (_activeMenu != null || Game1.activeClickableMenu is AiDialogueMenu || (DateTime.Now - _lastInteractionTime).TotalMilliseconds < 800)
+                {
+                    return;
+                }
+
                 var npc = dialogueBox.characterDialogue.speaker;
                 if (npc != null && _supportedNpcs.Contains(npc.Name))
                 {
