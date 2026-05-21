@@ -14,5 +14,8 @@ namespace LivingCompanionsValley.Models
 
         [XmlElement("Lore")]
         public string Lore { get; set; } = string.Empty;
+
+        [XmlIgnore]
+        public HashSet<string>? ParsedKeywords { get; set; }
     }
 }

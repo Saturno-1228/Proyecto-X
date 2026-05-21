@@ -43,6 +43,14 @@ namespace LivingCompanionsValley.Services
                         {
                             if (serializer.Deserialize(stream) is KnowledgeTopic topic)
                             {
+                                if (!string.IsNullOrEmpty(topic.Keywords))
+                                {
+                                    topic.ParsedKeywords = new HashSet<string>(
+                                        topic.Keywords.Split(',')
+                                            .Select(k => k.Trim().ToLowerInvariant())
+                                            .Where(k => !string.IsNullOrEmpty(k))
+                                    );
+                                }
                                 topics.Add(topic);
                             }
                         }
@@ -70,8 +78,7 @@ namespace LivingCompanionsValley.Services
             {
                 foreach (var topic in topics)
                 {
-                    var keywords = topic.Keywords.Split(',').Select(k => k.Trim().ToLowerInvariant());
-                    if (keywords.Any(k => msg.Contains(k)))
+                    if (topic.ParsedKeywords != null && topic.ParsedKeywords.Any(k => msg.Contains(k)))
                     {
                         matchedLore.Add(topic.Lore.Trim());
                         _logger.Log($"[{sanitizedName}] Keyword detectada para el tema: {topic.Id}", LogLevel.Debug);

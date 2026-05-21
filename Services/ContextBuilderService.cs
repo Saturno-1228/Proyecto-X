@@ -61,32 +61,32 @@ namespace LivingCompanionsValley.Services
 
             // 2. DINÁMICO (Estado del Mundo)
             sb.AppendLine("--- ESTADO ACTUAL DEL MUNDO ---");
-            sb.AppendLine($"Clima: {envState.Weather}");
-            sb.AppendLine($"Hora del día: {envState.TimeOfDay}");
-            sb.AppendLine($"Tu ubicación actual: {envState.CurrentLocation}");
-            sb.AppendLine($"Lo que estabas haciendo: {envState.CurrentAction}");
-            sb.AppendLine($"Nivel de amistad con el jugador: {envState.FriendshipHearts} corazones (sobre 10).");
+            sb.Append("Clima: ").AppendLine(envState.Weather);
+            sb.Append("Hora del día: ").AppendLine(envState.TimeOfDay);
+            sb.Append("Tu ubicación actual: ").AppendLine(envState.CurrentLocation);
+            sb.Append("Lo que estabas haciendo: ").AppendLine(envState.CurrentAction);
+            sb.Append("Nivel de amistad con el jugador: ").Append(envState.FriendshipHearts).AppendLine(" corazones (sobre 10).");
             if (envState.HeldItem != "Ninguno")
-                sb.AppendLine($"Objeto que el jugador sostiene en sus manos: {envState.HeldItem}");
+                sb.Append("Objeto que el jugador sostiene en sus manos: ").AppendLine(envState.HeldItem);
                 
             // Inyecciones de Fase 2.5
             if (!string.IsNullOrEmpty(envState.HealthStatus))
-                sb.AppendLine($"Estado de salud del jugador: {envState.HealthStatus}");
+                sb.Append("Estado de salud del jugador: ").AppendLine(envState.HealthStatus);
             if (!string.IsNullOrEmpty(envState.EnergyStatus))
-                sb.AppendLine($"Estado de energía del jugador: {envState.EnergyStatus}");
+                sb.Append("Estado de energía del jugador: ").AppendLine(envState.EnergyStatus);
             if (!string.IsNullOrEmpty(envState.NearbyWitnesses))
-                sb.AppendLine($"¡OJO! Hay testigos cerca escuchando esta charla: {envState.NearbyWitnesses}");
+                sb.Append("¡OJO! Hay testigos cerca escuchando esta charla: ").AppendLine(envState.NearbyWitnesses);
                 
             sb.AppendLine();
 
             // 3. CONOCIMIENTO SOBRE EL JUGADOR (Incluye Género dinámico)
             sb.AppendLine("--- CONOCIMIENTO SOBRE EL JUGADOR ---");
-            sb.AppendLine($"El jugador se llama: {playerProfile.PlayerName}");
+            sb.Append("El jugador se llama: ").AppendLine(playerProfile.PlayerName);
             // Inyección de género para evitar errores de concordancia ("bienvenido" vs "bienvenida")
-            sb.AppendLine($"Género: {(Game1.player.IsMale ? "Masculino" : "Femenino")}");
+            sb.Append("Género: ").AppendLine(Game1.player.IsMale ? "Masculino" : "Femenino");
             
             if (!string.IsNullOrWhiteSpace(playerProfile.InferredPersonality))
-                sb.AppendLine($"Personalidad inferida: {playerProfile.InferredPersonality}");
+                sb.Append("Personalidad inferida: ").AppendLine(playerProfile.InferredPersonality);
             sb.AppendLine();
 
             // 4. LORE DINÁMICO (Mantiene el esqueleto fijo para proteger el caché)
@@ -95,7 +95,7 @@ namespace LivingCompanionsValley.Services
             {
                 foreach (var chunk in dynamicLoreChunks)
                 {
-                    sb.AppendLine($"- {chunk}");
+                    sb.Append("- ").AppendLine(chunk);
                 }
             }
             else
@@ -111,7 +111,7 @@ namespace LivingCompanionsValley.Services
                 sb.AppendLine("--- TUS RECUERDOS RECIENTES ---");
                 foreach (var mem in activeMemories)
                 {
-                    sb.AppendLine($"- {mem}");
+                    sb.Append("- ").AppendLine(mem);
                 }
             }
 
