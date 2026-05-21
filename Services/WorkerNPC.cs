@@ -265,6 +265,10 @@ namespace LivingCompanionsValley.Services
                 Item harvested = ItemRegistry.Create(harvestId);
                 AddToInventory(harvested);
                 AddLog($"[Fuera de pantalla] Limpié {obj.DisplayName} en la baldosa {tile} y obtuve {name}.");
+
+                // Teletransportar físicamente al NPC a esta baldosa para inmersión
+                // Así cuando el jugador vuelva a la granja, el trabajador estará donde trabajó
+                this.Position = tile * 64f;
             }
         }
 
