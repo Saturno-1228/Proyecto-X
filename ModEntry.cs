@@ -184,6 +184,25 @@ namespace LivingCompanionsValley
 
             if (e.Button.IsActionButton())
             {
+                // Interceptar Shift + Click Derecho para mochila del trabajador
+                bool isShift = this.Helper.Input.IsDown(SButton.LeftShift) || this.Helper.Input.IsDown(SButton.RightShift);
+                if (isShift)
+                {
+                    foreach (var worker in _activeWorkers)
+                    {
+                        if (worker.currentLocation == Game1.currentLocation)
+                        {
+                            float distance = Vector2.Distance(Game1.player.Tile, worker.Tile);
+                            if (distance <= 2.5f)
+                            {
+                                OpenWorkerInventory(worker);
+                                this.Helper.Input.Suppress(e.Button);
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 var clickedTile = e.Cursor.GrabTile;
                 if (Game1.currentLocation is Farm)
                 {
@@ -197,6 +216,33 @@ namespace LivingCompanionsValley
                     }
                 }
             }
+        }
+
+        private void OpenWorkerInventory(WorkerNPC worker)
+        {
+            Game1.playSound("dwop");
+            Game1.activeClickableMenu = new ItemGrabMenu(
+                worker.Inventory,
+                false,
+                true,
+                item => true,
+                (item, farmer) => {
+                    worker.SaveInventory();
+                },
+                $"{worker.Name} - Mochila",
+                (item, farmer) => {
+                    worker.SaveInventory();
+                },
+                false,
+                true,
+                true,
+                true,
+                false,
+                0,
+                null,
+                -1,
+                worker
+            );
         }
 
         private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
