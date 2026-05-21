@@ -29,6 +29,37 @@ namespace LivingCompanionsValley.Services
 
         private string _currentSessionChatHistory = "";
 
+        // Cache de optimización Zero-I/O
+        private Dictionary<string, string> _identityCache = new Dictionary<string, string>();
+        private HashSet<string> _supportedNpcs = new HashSet<string>();
+        private bool _cacheInitialized = false;
+
+        private void EnsureCacheLoaded()
+        {
+            if (_cacheInitialized) return;
+            string lorePath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore");
+            if (Directory.Exists(lorePath))
+            {
+                var files = Directory.GetFiles(lorePath, "*.xml");
+                foreach (var file in files)
+                {
+                    _supportedNpcs.Add(Path.GetFileNameWithoutExtension(file));
+                }
+            }
+            _cacheInitialized = true;
+        }
+
+        private string GetStaticIdentity(string npcName)
+        {
+            if (_identityCache.TryGetValue(npcName, out var identity))
+                return identity;
+            
+            string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
+            identity = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : $"<Identidad><nombre>{npcName}</nombre></Identidad>";
+            _identityCache[npcName] = identity;
+            return identity;
+        }
+
         public InteractionManager(IModHelper helper, IMonitor logger, VeniceApiService veniceApi, MemoryService memoryService, ContextBuilderService contextBuilder, TopicRouterService topicRouter)
         {
             _helper = helper;
@@ -47,15 +78,15 @@ namespace LivingCompanionsValley.Services
         {
             if (e.Button == _activationKey && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
+                EnsureCacheLoaded();
                 var playerTile = Game1.player.Tile;
                 _activeNpc = Game1.player.currentLocation.characters
                              .FirstOrDefault(n => Vector2.Distance(n.Tile, playerTile) <= 3f && n.IsVillager);
 
                 if (_activeNpc != null)
                 {
-                    // Solo permitimos interactuar si el personaje tiene un archivo de Lore configurado
-                    string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{_activeNpc.Name}.xml");
-                    if (File.Exists(xmlPath))
+                    // Consulta RAM instantánea en lugar de File.Exists
+                    if (_supportedNpcs.Contains(_activeNpc.Name))
                     {
                         StartInteraction(_activeNpc);
                     }
@@ -109,17 +140,31 @@ namespace LivingCompanionsValley.Services
 
                 var activeMems = network.ActiveMemories.Select(m => m.Content).ToArray();
                 
-                // Cargar la Identidad XML Estática
-                string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npc.Name}.xml");
-                string xmlConfig = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : $"<Identidad><nombre>{npc.Name}</nombre></Identidad>";
+                // Cargar la Identidad XML Estática (Desde Caché RAM)
+                string xmlConfig = GetStaticIdentity(npc.Name);
 
-                // Entorno dinámico básico
+                // Detectar testigos cercanos (Consulta en RAM O(1))
+                var nearbyWitnesses = Game1.player.currentLocation.characters
+                    .Where(c => c.Name != npc.Name && c.IsVillager && Vector2.Distance(c.Tile, Game1.player.Tile) <= 8f && _supportedNpcs.Contains(c.Name))
+                    .Select(c => c.Name)
+                    .ToList();
+
+                string witnessesStr = nearbyWitnesses.Any() ? string.Join(", ", nearbyWitnesses) : "";
+
+                // Entorno dinámico básico y avanzado (Fase 2.5)
                 var envState = new EnvironmentState { 
                     Weather = Game1.isRaining ? "Lloviendo" : "Soleado", 
                     TimeOfDay = Game1.timeOfDay.ToString(),
                     CurrentLocation = Game1.player.currentLocation.Name,
-                    HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno"
+                    HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno",
+                    NearbyWitnesses = witnessesStr
                 };
+
+                // Inyectar estado físico vital
+                if (Game1.player.health < Game1.player.maxHealth * 0.2f)
+                    envState.HealthStatus = "El jugador se ve muy malherido y a punto de colapsar.";
+                if (Game1.player.Stamina < Game1.player.MaxStamina * 0.15f)
+                    envState.EnergyStatus = "El jugador se ve pálido y exhausto, casi sin energía.";
 
                 // Extraer el Lore Dinámico usando el TopicRouter (KRS)
                 string[] dynamicLoreChunks = _topicRouter.GetRelevantLoreChunks(npc.Name, playerMessage);
@@ -213,17 +258,31 @@ namespace LivingCompanionsValley.Services
                 var historyToSave = _currentSessionChatHistory;
                 var npcName = npc.Name;
                 
+                // Detectar testigos al finalizar la charla (Consulta en RAM O(1))
+                var nearbyWitnesses = Game1.player.currentLocation.characters
+                    .Where(c => c.Name != npcName && c.IsVillager && Vector2.Distance(c.Tile, Game1.player.Tile) <= 8f && _supportedNpcs.Contains(c.Name))
+                    .Select(c => c.Name)
+                    .ToList();
+                
                 Task.Run(async () => 
                 {
                     try
                     {
-                        // Tarea pesada con GLM-5, totalmente desacoplada del hilo principal del juego
-                        using var bgCts = new CancellationTokenSource(TimeSpan.FromSeconds(120)); // Damos 2 minutos para el "Thinking"
+                        // Consolidación del NPC principal
+                        using var bgCts = new CancellationTokenSource(TimeSpan.FromSeconds(120)); 
                         await _memoryService.ConsolidateMemoriesAsync(npcName, historyToSave, _veniceApi, bgCts.Token);
+                        
+                        // Consolidación de testigos (Eavesdropping / Rumores)
+                        foreach (var witness in nearbyWitnesses)
+                        {
+                            _logger.Log($"[{witness}] Escuchó la conversación de {npcName} a escondidas. Intentando extraer chismes...", LogLevel.Trace);
+                            using var witnessCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+                            await _memoryService.ConsolidateMemoriesAsync(witness, historyToSave, _veniceApi, witnessCts.Token, isOverhearing: true, activeNpcName: npcName);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _logger.Log($"Error interno de consolidación en 2do plano ({npcName}): {ex.Message}", LogLevel.Error);
+                        _logger.Log($"Error interno de consolidación en 2do plano: {ex.Message}", LogLevel.Error);
                     }
                 });
             }

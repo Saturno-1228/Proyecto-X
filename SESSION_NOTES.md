@@ -128,9 +128,16 @@ Logramos migrar exitosamente el mod desde una arquitectura acoplada y saturada (
 ### Nuevas Funcionalidades Estructurales Planificadas:
 1. **Reactivación Inmersiva por Voz:**
    - Portar el código previo de Whisper/Vosk al nuevo sistema `InteractionManager` como método de entrada secundario que reemplace/complemente el uso del teclado.
-2. **Sistema de Integración Económica Compleja (Tool Calling):**
+2. **Sistema de Integración Económica Compleja (Tool Calling & Agencia del Mundo):**
    - La IA tendrá privilegios sobre el mundo usando Tool Calling nativo de LLMs.
    - **Ventas Directas:** Comprarle semillas o animales directamente desde el chat.
-   - **Mecánica de Regateo (Persuasión):** Convencer al NPC de bajar precios basado en `FriendshipHearts`.
+   - **Acciones Físicas:** Ejecución de comandos como `[ACTION:GiveItem]`, `[ACTION:FollowPlayer]`, `[ACTION:ChangeHearts]`.
    - **Economía de Deudas Narrativas:** Creación de memorias financieras (`FinancialAnchor`).
-3. **Generación de Archivo ConfigUI Nativo:** - Migrar de pedir la API Key manualmente por Bloc de Notas a integrar la UI de **Generic Mod Config Menu** en la pantalla principal de Stardew Valley.
+3. **Generación de Archivo ConfigUI Nativo:** 
+   - Migrar de pedir la API Key manualmente por Bloc de Notas a integrar la UI de **Generic Mod Config Menu** en la pantalla principal de Stardew Valley.
+4. **Sistema de Chismes y Memoria Colectiva (Gossip Engine):**
+   - Compartir memorias entre NPCs. Si le cuentas un secreto a un NPC, este puede filtrarse a un archivo global `TownRumors` y otros NPCs podrían mencionarlo al día siguiente.
+5. **Consciencia Espacial Profunda (Deep Spatial Awareness):**
+   - Expandir el `ContextBuilderService` para que escanee un radio de casillas alrededor del jugador, detectando monstruos, otros NPCs cercanos, cultivos específicos y el estado financiero/salud del jugador para comentarios ultra-contextuales.
+6. **Misiones Generadas Dinámicamente (Dynamic Quests):**
+   - La IA puede inyectar misiones reales en el Diario de Misiones de Stardew Valley mediante el diálogo (ej. "Tráeme 50 de madera").

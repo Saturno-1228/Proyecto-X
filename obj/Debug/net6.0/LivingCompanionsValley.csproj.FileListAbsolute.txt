@@ -1,8 +1,0 @@
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.csproj.AssemblyReference.cache
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.AssemblyInfoInputs.cache
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.AssemblyInfo.cs
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.csproj.CoreCompileInputs.cache
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\bin\Debug\net6.0\LivingCompanionsValley.deps.json
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\bin\Debug\net6.0\LivingCompanionsValley.dll
-C:\Users\Trabajo\Desktop\Trabajo\Proyectos AI\Proyecto X\obj\Debug\net6.0\LivingCompanionsValley.dll

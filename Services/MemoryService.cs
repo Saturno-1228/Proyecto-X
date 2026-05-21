@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics;
 using StardewModdingAPI;
+using StardewValley;
 using LivingCompanionsValley.Models;
 
 namespace LivingCompanionsValley.Services
@@ -36,10 +37,19 @@ namespace LivingCompanionsValley.Services
         public ProfileUpdates Updates { get; set; } = new ProfileUpdates();
     }
 
+    public class CognitiveProfile
+    {
+        public bool IsElderly { get; set; }
+        public List<string> Interests { get; set; } = new List<string>();
+    }
+
     public class MemoryService
     {
         private readonly IModHelper _helper;
         private readonly IMonitor _logger;
+        
+        // Cache en memoria RAM para evitar leer disco duro cada mañana
+        private readonly Dictionary<string, CognitiveProfile> _cognitiveCache = new Dictionary<string, CognitiveProfile>();
 
         public MemoryService(IModHelper helper, IMonitor logger)
         {
@@ -81,11 +91,32 @@ namespace LivingCompanionsValley.Services
         /// </summary>
         public void ProcessDailyDecay(string npcName)
         {
-            // Evitar crear/procesar memorias para caballos, mascotas o NPCs no soportados
-            string xmlPath = System.IO.Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
-            if (!System.IO.File.Exists(xmlPath))
+            if (!_cognitiveCache.TryGetValue(npcName, out var profile))
             {
-                return;
+                // Evitar crear/procesar memorias para caballos, mascotas o NPCs no soportados
+                string xmlPath = System.IO.Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
+                if (!System.IO.File.Exists(xmlPath))
+                {
+                    return;
+                }
+
+                string xmlContent = System.IO.File.ReadAllText(xmlPath).ToLowerInvariant();
+                bool isElderly = xmlContent.Contains("<edad>anciano</edad>") || xmlContent.Contains("<edad>mayor</edad>");
+                
+                var intereses = new List<string>();
+                int startIndex = xmlContent.IndexOf("<intereses>");
+                if (startIndex != -1)
+                {
+                    int endIndex = xmlContent.IndexOf("</intereses>", startIndex);
+                    if (endIndex != -1)
+                    {
+                        string intStr = xmlContent.Substring(startIndex + 11, endIndex - (startIndex + 11));
+                        intereses = intStr.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+                    }
+                }
+                
+                profile = new CognitiveProfile { IsElderly = isElderly, Interests = intereses };
+                _cognitiveCache[npcName] = profile;
             }
 
             var network = GetMemoryNetwork(npcName);
@@ -93,19 +124,27 @@ namespace LivingCompanionsValley.Services
 
             foreach (var memory in network.ActiveMemories)
             {
-                // Decaimiento basado en el tipo (La idea de los 10 días = -0.1f)
+                float decayRate = 0f;
+                bool isInteresting = profile.Interests.Any(i => memory.Content.ToLowerInvariant().Contains(i));
+
                 switch (memory.Type)
                 {
                     case MemoryType.Episodic:
-                        memory.Strength -= 0.10f; // Tarda ~10 días en olvidarse sin refuerzo
+                        decayRate = profile.IsElderly ? 0.15f : 0.10f; // Los mayores olvidan trivialidades más rápido
+                        if (isInteresting) decayRate /= 2f;    // Retienen el doble de tiempo si les interesa
+                        else if (!isInteresting && Game1.player.getFriendshipHeartLevelForNPC(npcName) < 4) 
+                            decayRate *= 2f;                   // Olvidan al doble de velocidad cosas aburridas de desconocidos
                         break;
                     case MemoryType.LearnedFact:
-                        memory.Strength -= 0.03f; // Tarda ~33 días
+                        decayRate = profile.IsElderly ? 0.01f : 0.03f; // Los mayores retienen mejor los hechos sólidos
+                        if (isInteresting) decayRate /= 2f;
                         break;
                     case MemoryType.EmotionalAnchor:
-                        memory.Strength -= 0.005f; // Casi permanente (Ej. Regalos amados)
+                        decayRate = 0.005f; // Casi permanente (Ej. Regalos amados)
                         break;
                 }
+
+                memory.Strength -= decayRate;
 
                 if (memory.Strength < 0.2f)
                 {
@@ -177,9 +216,33 @@ namespace LivingCompanionsValley.Services
         /// Llama al modelo GLM-5 pesado para analizar la charla y extraer memorias, 
         /// forzando el formato estricto de Thinking Protocol solicitado por el usuario.
         /// </summary>
-        public async Task ConsolidateMemoriesAsync(string npcName, string rawChatHistory, VeniceApiService veniceApi, CancellationToken ct)
+        public async Task ConsolidateMemoriesAsync(string npcName, string rawChatHistory, VeniceApiService veniceApi, CancellationToken ct, bool isOverhearing = false, string activeNpcName = "")
         {
-            var systemPrompt = @"
+            var systemPrompt = isOverhearing ? $@"
+<thinking_protocol>
+INSTRUCCIÓN CRÍTICA: Eres el subconsciente de {npcName}. NO estabas hablando con el jugador. Estabas CERCA y escuchaste a escondidas su conversación con {activeNpcName}.
+Tu tarea es filtrar y decidir si escuchaste algo que realmente valga la pena recordar como un CHISME o SECRETO. 
+REGLA DE ORO: A la gente no le importa la charla trivial de otros. Si el jugador y {activeNpcName} solo se saludaron, hablaron del clima o dijeron cosas aburridas, NO RECUERDES NADA. Tu memoria debe quedar VACÍA.
+SOLO EXTRAE MEMORIAS SI:
+1. Hablaron de ti ({npcName}) o mencionaron tu nombre.
+2. Revelaron un secreto, chisme, o dato impactante sobre el pueblo o sus habitantes.
+3. Ocurrió un evento muy dramático.
+
+    1. EVALUACIÓN DE CHISMES:
+       - ¿Se reveló algún chisme jugoso o secreto relevante en esta charla ajena? (Si=Extraer a new_memories)
+    2. EVALUACIÓN DE RELEVANCIA PERSONAL:
+       - ¿Mencionaron tu nombre ({npcName}) o hablaron de algo que te importa muchísimo? (Si=Extraer a new_memories)
+    3. VERIFICACIÓN DE DESCARTE:
+       - ¿Fue una charla aburrida/trivial? (Si=Dejar new_memories VACÍO `[]`). [✓]
+</thinking_protocol>
+
+INSTRUCCIÓN FINAL: Después de concluir tu bloque de pensamiento <thinking_protocol>, tu respuesta FINAL debe ser ÚNICA y ESTRICTAMENTE un objeto JSON válido con la siguiente estructura (no añadas markdown de código al json). Si no hubo nada jugoso, deja el array vacío:
+{{
+  ""new_memories"": [
+    {{ ""content"": ""Resumen del chisme escuchado"", ""type"": ""Episodic"" }}
+  ],
+  ""profile_updates"": {{}}
+}}" : @"
 <thinking_protocol>
 INSTRUCCIÓN CRÍTICA: Eres el subconsciente cognitivo de un NPC. Tu única tarea es analizar el historial de la conversación reciente con el jugador y consolidar su memoria a largo y corto plazo.
 SIEMPRE debes usar el siguiente formato de pensamiento interno antes de generar tu salida JSON:
@@ -222,6 +285,12 @@ INSTRUCCIÓN FINAL: Después de concluir tu bloque de pensamiento <thinking_prot
             stopwatch.Stop();
             _logger.Log($"[{npcName}] Tiempo total de 'Thinking' y generación de GLM-5: {stopwatch.Elapsed.TotalSeconds:F2} segundos.", LogLevel.Info);
             
+            if (jsonResponse.StartsWith("["))
+            {
+                _logger.Log($"[{npcName}] La consolidación de memoria se abortó debido a un error de la API: {jsonResponse}", LogLevel.Warn);
+                return;
+            }
+
             // Limpieza del output para asegurar que solo quede el JSON (por si el modelo incluye comillas de markdown)
             var cleanJson = jsonResponse;
             if (cleanJson.Contains("```json"))

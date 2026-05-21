@@ -15,6 +15,11 @@ namespace LivingCompanionsValley.Services
         public string CurrentAction { get; set; } = "Caminando";
         public int FriendshipHearts { get; set; } = 0;
         public string HeldItem { get; set; } = "Ninguno";
+        
+        // Fase 2.5: Consciencia Espacial y Social
+        public string HealthStatus { get; set; } = "";
+        public string EnergyStatus { get; set; } = "";
+        public string NearbyWitnesses { get; set; } = "";
     }
 
     /// <summary>
@@ -63,6 +68,15 @@ namespace LivingCompanionsValley.Services
             sb.AppendLine($"Nivel de amistad con el jugador: {envState.FriendshipHearts} corazones (sobre 10).");
             if (envState.HeldItem != "Ninguno")
                 sb.AppendLine($"Objeto que el jugador sostiene en sus manos: {envState.HeldItem}");
+                
+            // Inyecciones de Fase 2.5
+            if (!string.IsNullOrEmpty(envState.HealthStatus))
+                sb.AppendLine($"Estado de salud del jugador: {envState.HealthStatus}");
+            if (!string.IsNullOrEmpty(envState.EnergyStatus))
+                sb.AppendLine($"Estado de energía del jugador: {envState.EnergyStatus}");
+            if (!string.IsNullOrEmpty(envState.NearbyWitnesses))
+                sb.AppendLine($"¡OJO! Hay testigos cerca escuchando esta charla: {envState.NearbyWitnesses}");
+                
             sb.AppendLine();
 
             // 3. CONOCIMIENTO SOBRE EL JUGADOR (Incluye Género dinámico)

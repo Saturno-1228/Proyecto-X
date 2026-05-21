@@ -296,21 +296,25 @@ namespace LivingCompanionsValley.UI
                     Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.8f);
                 
                 Texture2D textureToDraw = _npc.Portrait;
-                Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, this.CurrentEmotion, 64, 64);
+                
+                int frameSize = textureToDraw.Width <= 128 ? 64 : textureToDraw.Width / 2;
+                Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, this.CurrentEmotion, frameSize, frameSize);
                 
                 // --- PROTECCIÓN MATEMÁTICA CONTRA PANTALLAS ROSAS ---
                 // Si la IA pide una emoción (como la 5) y la imagen no es lo suficientemente grande,
                 // usamos la cara neutral (0) para evitar cuadros rosas o crashes.
                 if (!textureToDraw.Bounds.Contains(sourceRect))
                 {
-                    sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, 0, 64, 64);
+                    sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, 0, frameSize, frameSize);
                 }
+
+                float portraitScale = 256f / frameSize;
 
                 // Dibujo exacto del Retrato 
                 b.Draw(textureToDraw, 
                     new Vector2(portraitBoxX + 104, this.yPositionOnScreen + 48), // Offset para centrar en el Portrait Plate
                     new Rectangle?(sourceRect), 
-                    Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 0.88f);
+                    Color.White, 0f, Vector2.Zero, portraitScale, SpriteEffects.None, 0.88f);
                 
                 // Renderizado del Nameplate (bajado ~4% del original)
                 StardewValley.BellsAndWhistles.SpriteText.drawStringHorizontallyCenteredAt(

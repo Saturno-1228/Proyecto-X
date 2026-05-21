@@ -14,3 +14,5 @@ config.json
 
 # Opcional: ignorar el .zip de distribución si lo genera dentro de la carpeta
 *.zip
+
+scratch/

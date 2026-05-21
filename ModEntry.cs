@@ -34,6 +34,12 @@ namespace LivingCompanionsValley
 
             Logger!.Log("Living Companions Valley v2.0 (Dual-Model) inicializado correctamente.", LogLevel.Info);
 
+            if (_config.EnableBuiltInHdPortraits)
+            {
+                var harmony = new HarmonyLib.Harmony(this.ModManifest.UniqueID);
+                HdPortraitPatcher.ApplyPatches(harmony, Logger!);
+            }
+
             helper.Events.GameLoop.DayStarted += OnDayStarted;
             
             // --- ESTO ES LO QUE FALTA EN GITHUB ---
