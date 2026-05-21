@@ -109,8 +109,8 @@ namespace LivingCompanionsValley.Services
                 Temperature = 0.7,
                 VeniceParameters = new VeniceParameters { IncludeVeniceSystemPrompt = false },
                 
-                // Configuración de razonamiento: "medium" para el modelo de chat
-                Reasoning = modelName == ChatModel ? new ReasoningConfig { Effort = "medium" } : null
+                // Configuración de razonamiento: "low" para el modelo de chat para agilizar las respuestas
+                Reasoning = modelName == ChatModel ? new ReasoningConfig { Effort = "low" } : null
             };
 
             // 1. Capa Estática: Identidad y Reglas (Base del Caché)
