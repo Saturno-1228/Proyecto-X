@@ -91,10 +91,11 @@ namespace LivingCompanionsValley.Services
         /// </summary>
         public void ProcessDailyDecay(string npcName)
         {
-            if (!_cognitiveCache.TryGetValue(npcName, out var profile))
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(npcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            if (!_cognitiveCache.TryGetValue(sanitizedName, out var profile))
             {
                 // Evitar crear/procesar memorias para caballos, mascotas o NPCs no soportados
-                string xmlPath = System.IO.Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
+                string xmlPath = System.IO.Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{sanitizedName}.xml");
                 if (!System.IO.File.Exists(xmlPath))
                 {
                     return;

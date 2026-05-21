@@ -51,12 +51,13 @@ namespace LivingCompanionsValley.Services
 
         private string GetStaticIdentity(string npcName)
         {
-            if (_identityCache.TryGetValue(npcName, out var identity))
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(npcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            if (_identityCache.TryGetValue(sanitizedName, out var identity))
                 return identity;
             
-            string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{npcName}.xml");
-            identity = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : $"<Identidad><nombre>{npcName}</nombre></Identidad>";
-            _identityCache[npcName] = identity;
+            string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{sanitizedName}.xml");
+            identity = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : $"<Identidad><nombre>{sanitizedName}</nombre></Identidad>";
+            _identityCache[sanitizedName] = identity;
             return identity;
         }
 

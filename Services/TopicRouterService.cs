@@ -24,10 +24,11 @@ namespace LivingCompanionsValley.Services
 
         private void EnsureNpcKnowledgeLoaded(string npcName)
         {
-            if (_knowledgeCache.ContainsKey(npcName)) return;
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(npcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            if (_knowledgeCache.ContainsKey(sanitizedName)) return;
 
             var topics = new List<KnowledgeTopic>();
-            string npcKnowledgePath = Path.Combine(_helper.DirectoryPath, "Assets", "Knowledge", npcName);
+            string npcKnowledgePath = Path.Combine(_helper.DirectoryPath, "Assets", "Knowledge", sanitizedName);
 
             if (Directory.Exists(npcKnowledgePath))
             {
@@ -53,18 +54,19 @@ namespace LivingCompanionsValley.Services
                 }
             }
 
-            _knowledgeCache[npcName] = topics;
-            _logger.Log($"Se cargaron {topics.Count} temas de conocimiento para {npcName}.", LogLevel.Trace);
+            _knowledgeCache[sanitizedName] = topics;
+            _logger.Log($"Se cargaron {topics.Count} temas de conocimiento para {sanitizedName}.", LogLevel.Trace);
         }
 
         public string[] GetRelevantLoreChunks(string npcName, string userMessage)
         {
-            EnsureNpcKnowledgeLoaded(npcName);
+            var sanitizedName = System.Text.RegularExpressions.Regex.Replace(npcName, @"[^a-zA-Z0-9_\.\-]", "_");
+            EnsureNpcKnowledgeLoaded(sanitizedName);
             
             var msg = userMessage.ToLowerInvariant();
             var matchedLore = new List<string>();
 
-            if (_knowledgeCache.TryGetValue(npcName, out var topics))
+            if (_knowledgeCache.TryGetValue(sanitizedName, out var topics))
             {
                 foreach (var topic in topics)
                 {
@@ -72,7 +74,7 @@ namespace LivingCompanionsValley.Services
                     if (keywords.Any(k => msg.Contains(k)))
                     {
                         matchedLore.Add(topic.Lore.Trim());
-                        _logger.Log($"[{npcName}] Keyword detectada para el tema: {topic.Id}", LogLevel.Debug);
+                        _logger.Log($"[{sanitizedName}] Keyword detectada para el tema: {topic.Id}", LogLevel.Debug);
                     }
                 }
             }
