@@ -380,10 +380,24 @@ namespace LivingCompanionsValley.UI
             // Renderizado visual del chatbox
             DrawNativeBox(b, _chatBoxX, currentTopY, _chatBoxWidth, _chatBoxHeight);
 
+            // Placeholder Text / Empty State
+            if (string.IsNullOrWhiteSpace(_fullChatText))
+            {
+                string placeholderText = _isThinking ? "Esperando respuesta..." : "Escribe un mensaje...";
+                Vector2 placeholderPos = new Vector2(_chatBoxX + 16, currentTopY + 12);
+                b.DrawString(font, placeholderText, placeholderPos, Color.Gray * 0.8f, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.9f);
+
+                // Dibujar el cursor parpadeante si no está pensando
+                if (!_isThinking && Game1.currentGameTime.TotalGameTime.TotalMilliseconds % 1000 < 500)
+                {
+                    b.DrawString(font, "|", new Vector2(placeholderPos.X - 2, placeholderPos.Y), Game1.textColor, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.9f);
+                }
+            }
+
             for (int i = 0; i < visibleLinesCount; i++)
             {
                 int lineIndex = _currentScrollIndex + i; 
-                if (lineIndex < _wrappedLines.Count)
+                if (lineIndex < _wrappedLines.Count && !string.IsNullOrEmpty(_wrappedLines[lineIndex]))
                 {
                     Vector2 position = new Vector2(_chatBoxX + 16, currentTopY + 12 + (i * lineHeight));
                     b.DrawString(font, _wrappedLines[lineIndex], position, Game1.textColor, 0f, Vector2.Zero, 1f, SpriteEffects.None, 0.9f);
