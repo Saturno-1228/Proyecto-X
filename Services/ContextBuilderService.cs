@@ -15,6 +15,7 @@ namespace LivingCompanionsValley.Services
         public string CurrentAction { get; set; } = "Caminando";
         public int FriendshipHearts { get; set; } = 0;
         public string HeldItem { get; set; } = "Ninguno";
+        public bool IsFirstMeeting { get; set; } = false;
         
         // Fase 2.5: Consciencia Espacial y Social
         public string HealthStatus { get; set; } = "";
@@ -44,6 +45,10 @@ namespace LivingCompanionsValley.Services
             sb.AppendLine("Usa uno de los siguientes códigos antes de la palabra donde quieres que tu rostro cambie:");
             sb.AppendLine("[0] Neutral, [1] Feliz/Alegre, [2] Triste, [3] Pensativo/Sorprendido/Único, [4] Enojado/Molesto, [5] Sonrojado/Romántico.");
             sb.AppendLine("Responde de forma MUY concisa (1 o 2 oraciones) ya que el jugador te lee en una caja de diálogo.");
+            
+            // --- INSTRUCCIÓN PARA MODIFICAR LA AMISTAD (TOOL CALLING OCULTO) ---
+            sb.AppendLine("REGLA DE AMISTAD: Si el jugador dice algo increíblemente agradable o muy ofensivo que altere tu visión sobre él, añade EXACTAMENTE al final de tu respuesta el JSON oculto: {\"friendship_delta\": X}, donde X es un número entre -5 y 5. Si la charla es normal o mundana, NO añadas este JSON bajo ninguna circunstancia.");
+
             sb.AppendLine();
             sb.AppendLine("--- TU IDENTIDAD Y APARIENCIA ---");
             sb.AppendLine(xmlIdentityConfig); 
@@ -60,6 +65,7 @@ namespace LivingCompanionsValley.Services
             var sb = new StringBuilder(1024);
 
             // 2. DINÁMICO (Estado del Mundo)
+            // NOTA PARA EL USUARIO: Esta sección informa a la IA sobre su entorno físico inmediato. (Clima, ubicación, etc.)
             sb.AppendLine("--- ESTADO ACTUAL DEL MUNDO ---");
             sb.Append("Clima: ").AppendLine(envState.Weather);
             sb.Append("Hora del día: ").AppendLine(envState.TimeOfDay);
@@ -80,7 +86,13 @@ namespace LivingCompanionsValley.Services
             sb.AppendLine();
 
             // 3. CONOCIMIENTO SOBRE EL JUGADOR (Incluye Género dinámico)
+            // NOTA PARA EL USUARIO: Aquí la IA aprende con quién está hablando. Si quieres cambiar la inmersión, modifica estas líneas de texto libremente.
             sb.AppendLine("--- CONOCIMIENTO SOBRE EL JUGADOR ---");
+            if (envState.IsFirstMeeting)
+            {
+                sb.AppendLine("¡ATENCIÓN! ESTA ES LA PRIMERA VEZ QUE VES Y HABLAS CON ESTE JUGADOR EN TODA TU VIDA. PRESÉNTATE COMO ES DEBIDO.");
+            }
+            
             sb.Append("El jugador se llama: ").AppendLine(playerProfile.PlayerName);
             // Inyección de género para evitar errores de concordancia ("bienvenido" vs "bienvenida")
             sb.Append("Género: ").AppendLine(Game1.player.IsMale ? "Masculino" : "Femenino");

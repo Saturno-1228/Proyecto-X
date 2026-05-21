@@ -7,8 +7,10 @@ using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Menus;
 using LivingCompanionsValley.UI;
 using LivingCompanionsValley.Models;
+using System.Text.RegularExpressions;
 
 namespace LivingCompanionsValley.Services
 {
@@ -107,7 +109,7 @@ namespace LivingCompanionsValley.Services
             }
         }
 
-        private void StartInteraction(NPC npc)
+        private void StartInteraction(NPC npc, string? initialVanillaMessage = null)
         {
             _activeNpc = npc;
             _currentSessionChatHistory = "";
@@ -126,6 +128,14 @@ namespace LivingCompanionsValley.Services
             // 2. Instanciar la Interfaz Unificada
             _activeMenu = new AiDialogueMenu(npc, OnMessageSubmitted);
             Game1.activeClickableMenu = _activeMenu;
+
+            // 3. Si interceptamos un diálogo nativo, inyectarlo como mensaje inicial
+            if (!string.IsNullOrEmpty(initialVanillaMessage))
+            {
+                _currentSessionChatHistory += $"{npc.Name}: {initialVanillaMessage}\n";
+                _sessionMessages.Add(new VeniceMessage { Role = "assistant", Content = initialVanillaMessage });
+                _activeMenu.ReceiveAiResponse(initialVanillaMessage);
+            }
         }
 
         private async void OnMessageSubmitted(string playerMessage)
@@ -170,7 +180,9 @@ namespace LivingCompanionsValley.Services
                     TimeOfDay = Game1.timeOfDay.ToString(),
                     CurrentLocation = Game1.player.currentLocation.Name,
                     HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno",
-                    NearbyWitnesses = witnessesStr
+                    NearbyWitnesses = witnessesStr,
+                    FriendshipHearts = Game1.player.getFriendshipHeartLevelForNPC(npc.Name),
+                    IsFirstMeeting = !Game1.player.friendshipData.ContainsKey(npc.Name)
                 };
 
                 // Inyectar estado físico vital
@@ -222,6 +234,22 @@ namespace LivingCompanionsValley.Services
                 // Extraer la respuesta cruda, asegurando que no esté vacía
                 string cleanResponse = string.IsNullOrWhiteSpace(response) ? "..." : response;
 
+                // --- TOOL CALLING: FRIENDSHIP DELTA ---
+                var match = Regex.Match(cleanResponse, @"\{""friendship_delta"":\s*(-?\d+)\}");
+                if (match.Success)
+                {
+                    if (int.TryParse(match.Groups[1].Value, out int delta))
+                    {
+                        // Limitar el delta matemáticamente entre -5 y +5
+                        delta = Math.Max(-5, Math.Min(5, delta));
+                        Game1.player.changeFriendship(delta, npc);
+                        _logger.Log($"[{npc.Name}] IA alteró amistad en {delta} puntos.", LogLevel.Info);
+                    }
+                    // Remover el JSON del texto visible al usuario
+                    cleanResponse = cleanResponse.Replace(match.Value, "").Trim();
+                }
+                // --------------------------------------
+
                 // Si se cayó el internet o hay un error de conexión, activamos el modo offline
                 if (cleanResponse.Contains("[Error de conexión con la IA]") || cleanResponse.Contains("[Error interno]") || cleanResponse.Contains("[Cancelado]"))
                 {
@@ -270,6 +298,27 @@ namespace LivingCompanionsValley.Services
 
         private void OnMenuChanged(object? sender, MenuChangedEventArgs e)
         {
+            // Interceptar cajas de diálogo vanilla al hacer Clic Derecho
+            if (e.NewMenu is DialogueBox dialogueBox && dialogueBox.characterDialogue != null)
+            {
+                var npc = dialogueBox.characterDialogue.speaker;
+                if (npc != null && _supportedNpcs.Contains(npc.Name))
+                {
+                    if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
+                    {
+                        // Estamos offline, dejar que el diálogo vanilla corra normalmente
+                        return;
+                    }
+
+                    // Robar el texto vanilla
+                    string vanillaMessage = dialogueBox.characterDialogue.getCurrentDialogue();
+                    
+                    // Iniciar la interacción de IA pasando el mensaje original
+                    StartInteraction(npc, vanillaMessage);
+                    return;
+                }
+            }
+
             // Detectar cuando el jugador cierra nuestra UI (con ESC o click fuera)
             if (e.OldMenu is AiDialogueMenu && e.NewMenu == null && _activeNpc != null)
             {
