@@ -29,6 +29,10 @@ namespace LivingCompanionsValley.Services
 
         private string _currentSessionChatHistory = "";
 
+        // Manejo de conexión y modo Offline
+        private bool _isOfflineCooldownActive = false;
+        private DateTime _offlineCooldownExpiration;
+
         // Cache de optimización Zero-I/O
         private Dictionary<string, string> _identityCache = new Dictionary<string, string>();
         private HashSet<string> _supportedNpcs = new HashSet<string>();
@@ -89,7 +93,15 @@ namespace LivingCompanionsValley.Services
                     // Consulta RAM instantánea en lugar de File.Exists
                     if (_supportedNpcs.Contains(_activeNpc.Name))
                     {
-                        StartInteraction(_activeNpc);
+                        if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
+                        {
+                            // Si estamos en cooldown por falta de internet, forzamos diálogo vanilla
+                            _activeNpc.checkAction(Game1.player, Game1.player.currentLocation);
+                        }
+                        else
+                        {
+                            StartInteraction(_activeNpc);
+                        }
                     }
                 }
             }
@@ -209,6 +221,26 @@ namespace LivingCompanionsValley.Services
 
                 // Extraer la respuesta cruda, asegurando que no esté vacía
                 string cleanResponse = string.IsNullOrWhiteSpace(response) ? "..." : response;
+
+                // Si se cayó el internet o hay un error de conexión, activamos el modo offline
+                if (cleanResponse.Contains("[Error de conexión con la IA]") || cleanResponse.Contains("[Error interno]") || cleanResponse.Contains("[Cancelado]"))
+                {
+                    _logger.Log($"[{npc.Name}] Fallo en conexión detectado. Activando Fallback a Vanilla por 5 minutos.", LogLevel.Warn);
+                    _isOfflineCooldownActive = true;
+                    _offlineCooldownExpiration = DateTime.Now.AddMinutes(5); // 5 minutos de cooldown
+                    
+                    Game1.addHUDMessage(new HUDMessage("Living Companions: Sin conexión. Diálogos clásicos activados temporalmente.", 3));
+                    
+                    if (Game1.activeClickableMenu is AiDialogueMenu)
+                    {
+                        Game1.exitActiveMenu();
+                    }
+                    
+                    // Descongelamos al NPC y abrimos su diálogo clásico
+                    _helper.Reflection.GetField<bool>(npc, "freezeMotion").SetValue(false);
+                    npc.checkAction(Game1.player, Game1.player.currentLocation);
+                    return;
+                }
 
                 _currentSessionChatHistory += $"{npc.Name}: {cleanResponse}\n";
 
