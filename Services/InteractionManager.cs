@@ -63,7 +63,9 @@ namespace LivingCompanionsValley.Services
                 return identity;
             
             string xmlPath = Path.Combine(_helper.DirectoryPath, "Assets", "Lore", $"{sanitizedName}.xml");
-            identity = File.Exists(xmlPath) ? File.ReadAllText(xmlPath) : $"<Identidad><nombre>{sanitizedName}</nombre></Identidad>";
+            identity = File.Exists(xmlPath) 
+                ? File.ReadAllText(xmlPath) 
+                : $"<Identidad><nombre>{sanitizedName}</nombre><descripcion>Eres un ayudante o trabajador contratado en la granja. Eres servicial, respetuoso y amable. Estás listo para limpiar el terreno de malezas, piedras y troncos de madera en la granja.</descripcion></Identidad>";
             _identityCache[sanitizedName] = identity;
             return identity;
         }
@@ -89,12 +91,12 @@ namespace LivingCompanionsValley.Services
                 EnsureCacheLoaded();
                 var playerTile = Game1.player.Tile;
                 _activeNpc = Game1.player.currentLocation.characters
-                             .FirstOrDefault(n => Vector2.Distance(n.Tile, playerTile) <= 3f && n.IsVillager);
+                             .FirstOrDefault(n => Vector2.Distance(n.Tile, playerTile) <= 3f && (n.IsVillager || n is WorkerNPC));
 
                 if (_activeNpc != null)
                 {
                     // Consulta RAM instantánea en lugar de File.Exists
-                    if (_supportedNpcs.Contains(_activeNpc.Name))
+                    if (_activeNpc is WorkerNPC || _supportedNpcs.Contains(_activeNpc.Name))
                     {
                         if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
                         {
@@ -317,7 +319,7 @@ namespace LivingCompanionsValley.Services
                 }
 
                 var npc = dialogueBox.characterDialogue.speaker;
-                if (npc != null && _supportedNpcs.Contains(npc.Name))
+                if (npc != null && (_supportedNpcs.Contains(npc.Name) || npc is WorkerNPC))
                 {
                     if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
                     {
