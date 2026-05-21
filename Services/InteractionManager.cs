@@ -318,10 +318,31 @@ namespace LivingCompanionsValley.Services
                         return;
                     }
 
-                    // Robar el texto vanilla
-                    string vanillaMessage = dialogueBox.characterDialogue.getCurrentDialogue();
+                    // Robar el texto vanilla y combinar todas las páginas si es un diálogo largo
+                    string vanillaMessage = "";
+                    try
+                    {
+                        var dialogueObj = dialogueBox.characterDialogue;
+                        var pages = _helper.Reflection.GetField<System.Collections.Generic.List<string>>(dialogueObj, "dialogues").GetValue();
+                        if (pages != null && pages.Count > 0)
+                        {
+                            // Limpiar tags especiales de Stardew Valley (ej: $e, $h, $neutral) de cada página
+                            var cleanPages = pages.Select(p => Regex.Replace(p, @"\$[a-zA-Z0-9_#\-]*", "").Trim())
+                                                  .Where(p => !string.IsNullOrEmpty(p));
+                            vanillaMessage = string.Join(" ", cleanPages);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Log($"Error al extraer páginas de diálogo completo: {ex.Message}. Usando página única.", LogLevel.Warn);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(vanillaMessage))
+                    {
+                        vanillaMessage = dialogueBox.characterDialogue.getCurrentDialogue();
+                    }
                     
-                    // Iniciar la interacción de IA pasando el mensaje original
+                    // Iniciar la interacción de IA pasando el mensaje original completo
                     StartInteraction(npc, vanillaMessage);
                     return;
                 }
