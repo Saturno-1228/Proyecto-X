@@ -21,6 +21,10 @@ namespace LivingCompanionsValley.Services
         public string HealthStatus { get; set; } = "";
         public string EnergyStatus { get; set; } = "";
         public string NearbyWitnesses { get; set; } = "";
+
+        // Bitácora del Trabajador Contratado
+        public List<string>? WorkerDailyLog { get; set; } = null;
+        public string? WorkerTask { get; set; } = null;
     }
 
     /// <summary>
@@ -117,7 +121,19 @@ namespace LivingCompanionsValley.Services
             }
             sb.AppendLine();
 
-            // 5. MEMORIAS VIGENTES
+            // 5. BITÁCORA DE TRABAJADOR
+            if (envState.WorkerDailyLog != null && envState.WorkerDailyLog.Count > 0)
+            {
+                sb.AppendLine("--- TU BITÁCORA DIARIA DE TRABAJO (HOY) ---");
+                sb.Append("Tarea actual: ").AppendLine(envState.WorkerTask ?? "Ninguna");
+                foreach (var log in envState.WorkerDailyLog)
+                {
+                    sb.Append("- ").AppendLine(log);
+                }
+                sb.AppendLine();
+            }
+
+            // 6. MEMORIAS VIGENTES
             if (activeMemories != null && activeMemories.Length > 0)
             {
                 sb.AppendLine("--- TUS RECUERDOS RECIENTES ---");

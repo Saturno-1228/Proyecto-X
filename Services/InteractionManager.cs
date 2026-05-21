@@ -187,6 +187,13 @@ namespace LivingCompanionsValley.Services
                     IsFirstMeeting = !Game1.player.friendshipData.ContainsKey(npc.Name)
                 };
 
+                // Si el NPC es un trabajador contratado, inyectar su bitácora diaria
+                if (npc is WorkerNPC worker)
+                {
+                    envState.WorkerDailyLog = worker.State.DailyLog;
+                    envState.WorkerTask = worker.CurrentTaskName;
+                }
+
                 // Inyectar estado físico vital
                 if (Game1.player.health < Game1.player.maxHealth * 0.2f)
                     envState.HealthStatus = "El jugador se ve muy malherido y a punto de colapsar.";
