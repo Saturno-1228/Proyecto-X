@@ -288,7 +288,7 @@ namespace LivingCompanionsValley
                 {
                     var data = asset.AsDictionary<string, string>();
                     // Name / Type / Tilesheet Size / Bounding Box Size / Rotations / Price / Placement Restriction / Display Name / Sprite Index / Texture / Exclude from Shop / Context Tags
-                    string furnitureString = "Tablero de Empleos/other/3 3/3 1/1/1/2/Tablero de Empleos/0/LooseSprites\\SpecialOrdersBoard/false/";
+                    string furnitureString = "Tablero de Empleos/decor/3 4/3 2/1/1/2/Tablero de Empleos/0/LooseSprites/SpecialOrdersBoard/false/";
                     data.Data["LivingCompanions_HiringBoard"] = furnitureString;
                 });
             }
