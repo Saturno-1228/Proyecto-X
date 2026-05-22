@@ -134,8 +134,8 @@ namespace LivingCompanionsValley
                     string action = busStop.doesTileHaveProperty(x, y, "Action", "Buildings");
                     if (action != null && (action.Contains("Message") || action.Contains("Sign")))
                     {
-                        // Encontramos el cartel direccional! Lo ponemos justo a la izquierda
-                        boardTile = new Vector2(x - 1, y);
+                        // Moverlo aproximadamente 8 tiles a la derecha del letrero original
+                        boardTile = new Vector2(x + 7, y);
                         foundSign = true;
                         break;
                     }
@@ -143,18 +143,27 @@ namespace LivingCompanionsValley
                 if (foundSign) break;
             }
 
-            // Si no hay ningún mueble en esa baldosa, colocamos el tablero gigante
-            bool boardExists = false;
+            // Buscar si ya existe el tablero gigante
+            StardewValley.Objects.Furniture existingBoard = null;
             foreach (var f in busStop.furniture)
             {
-                if (f.TileLocation == boardTile || f.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
+                if (f.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
                 {
-                    boardExists = true;
+                    existingBoard = f;
                     break;
                 }
             }
 
-            if (!boardExists)
+            // Si existe pero está en la posición incorrecta (por un parche de actualización), lo quitamos
+            if (existingBoard != null && existingBoard.TileLocation != boardTile)
+            {
+                busStop.furniture.Remove(existingBoard);
+                existingBoard = null;
+                Logger?.Log($"Moviendo tablero de contratación a nueva posición: {boardTile}.", LogLevel.Info);
+            }
+
+            // Si no existe, lo creamos y lo agregamos
+            if (existingBoard == null)
             {
                 try
                 {
