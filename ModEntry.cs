@@ -74,24 +74,14 @@ namespace LivingCompanionsValley
 
         public void RegisterAndSpawnWorker(WorkerState state)
         {
-            // Spawnear en su cabaña asignada a tile (2, 2)
-            var worker = new WorkerNPC(state, new Vector2(2, 2), state.CabinName);
+            // Spawnear directamente en la Granja por ahora para probar el movimiento
+            var farm = Game1.getFarm();
+            var worker = new WorkerNPC(state, new Vector2(64, 15), "Farm");
+            
             _activeWorkers.Add(worker);
             
-            var cabin = Game1.getLocationFromName(state.CabinName);
-            if (cabin != null)
-            {
-                cabin.characters.Add(worker);
-                worker.AddLog("Contratado y asignado a esta cabaña.");
-            }
-            else
-            {
-                Logger?.Log($"No se encontró la cabaña {state.CabinName} para spawnear a {state.Name}. Spawneando en la Granja.", LogLevel.Warn);
-                var farm = Game1.getFarm();
-                worker.currentLocation = farm;
-                worker.Position = new Vector2(64, 15) * 64f;
-                farm.characters.Add(worker);
-            }
+            farm.characters.Add(worker);
+            worker.AddLog("Contratado y spawneado en la Granja.");
 
             if (!_saveData.HiredWorkers.Any(w => w.Id == state.Id))
             {

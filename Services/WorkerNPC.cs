@@ -168,7 +168,7 @@ namespace LivingCompanionsValley.Services
                 {
                     if (TaskTicks % 120 == 0 && this.controller == null) // Cada 2 segundos
                     {
-                        PathfindToAndClearDebris(farm);
+                        WanderRandomly(farm);
                     }
                 }
                 else
@@ -182,7 +182,7 @@ namespace LivingCompanionsValley.Services
             }
         }
 
-        private void PathfindToAndClearDebris(Farm farm)
+        private void WanderRandomly(Farm farm)
         {
             Vector2? targetDebris = FindNearestDebris(farm);
             if (targetDebris == null)
