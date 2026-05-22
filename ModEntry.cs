@@ -143,15 +143,24 @@ namespace LivingCompanionsValley
                 if (foundSign) break;
             }
 
-            // Si no hay ningún objeto en esa baldosa, colocamos el letrero de madera
-            if (!busStop.objects.ContainsKey(boardTile))
+            // Si no hay ningún mueble en esa baldosa, colocamos el tablero gigante
+            bool boardExists = false;
+            foreach (var f in busStop.furniture)
+            {
+                if (f.TileLocation == boardTile || f.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
+                {
+                    boardExists = true;
+                    break;
+                }
+            }
+
+            if (!boardExists)
             {
                 try
                 {
-                    // (BC)37 es el ID del Wood Sign (Letrero de Madera)
-                    var signObj = new StardewValley.Objects.Sign(boardTile, "37");
-                    busStop.objects.Add(boardTile, signObj);
-                    Logger?.Log($"Tablero de contratación colocado permanentemente en la parada de autobuses {boardTile}.", LogLevel.Info);
+                    var furniture = new StardewValley.Objects.Furniture("LivingCompanions_HiringBoard", boardTile);
+                    busStop.furniture.Add(furniture);
+                    Logger?.Log($"¡Tablero de Empleos Oficial colocado en {boardTile}!", LogLevel.Info);
                 }
                 catch (Exception ex)
                 {
@@ -209,13 +218,20 @@ namespace LivingCompanionsValley
                 if (Game1.currentLocation?.Name == "BusStop")
                 {
                     var busStop = Game1.currentLocation;
-                    if (busStop.objects.TryGetValue(clickedTile, out var obj) && (obj.QualifiedItemId == "(BC)37" || obj.Name == "Wood Sign"))
+                    foreach (var furniture in busStop.furniture)
                     {
-                        // Si es un cartel en la parada de autobuses, asumimos que es el nuestro
-                        Game1.playSound("shwip");
-                        Game1.activeClickableMenu = new HiringLedgerMenu();
-                        this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
-                        return;
+                        if (furniture.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
+                        {
+                            // Verificar si el clic cae dentro del bounding box del mueble
+                            if (furniture.GetBoundingBox().Contains((int)(clickedTile.X * 64), (int)(clickedTile.Y * 64)) ||
+                                Vector2.Distance(clickedTile, furniture.TileLocation) <= 2f)
+                            {
+                                Game1.playSound("shwip");
+                                Game1.activeClickableMenu = new HiringLedgerMenu();
+                                this.Helper.Input.Suppress(e.Button);
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -321,6 +337,39 @@ namespace LivingCompanionsValley
                     e.LoadFromModFile<Texture2D>(customPortraitPath, AssetLoadPriority.Medium);
                     Logger?.Log($"¡Retrato LCV de {npcName} inyectado con éxito!", LogLevel.Trace);
                 }
+            }
+            else if (e.NameWithoutLocale.IsEquivalentTo("Data/Furniture"))
+            {
+                e.Edit(asset =>
+                {
+                    var data = asset.AsDictionary<string, string>();
+                    // Name / Type / Tilesheet Size / Bounding Box Size / Rotations / Price / Placement Restriction / Display Name / Sprite Index / Texture / Exclude from Shop / Context Tags
+                    string furnitureString = "Tablero de Empleos/decor/3 2/3 1/1/1/2/Tablero de Empleos/0/LivingCompanionsValley\\HiringBoard/false/";
+                    data.Data["LivingCompanions_HiringBoard"] = furnitureString;
+                });
+            }
+            else if (e.NameWithoutLocale.IsEquivalentTo("LivingCompanionsValley/HiringBoard"))
+            {
+                e.LoadFrom(() =>
+                {
+                    // ¡Magia! Extraemos el tablero de órdenes especiales directamente del mapa del pueblo
+                    Texture2D townTiles = Game1.content.Load<Texture2D>("Maps\\spring_town");
+                    
+                    // El tablero está en las baldosas 2013-2015 (arriba) y 2045-2047 (abajo)
+                    // En un tilesheet de 32 baldosas de ancho (512px):
+                    // Tile 2013 -> X = (2013 % 32) * 16 = 29 * 16 = 464
+                    //           -> Y = (2013 / 32) * 16 = 62 * 16 = 992
+                    // Tamaño: 3 baldosas de ancho (48px), 2 de alto (32px)
+                    Rectangle sourceRect = new Rectangle(464, 992, 48, 32);
+                    Color[] pixelData = new Color[48 * 32];
+                    townTiles.GetData(0, sourceRect, pixelData, 0, pixelData.Length);
+
+                    Texture2D customBoard = new Texture2D(Game1.graphics.GraphicsDevice, 48, 32);
+                    customBoard.SetData(pixelData);
+                    
+                    Logger?.Log("Textura del tablero de empleos generada dinámicamente desde el mapa del pueblo.", LogLevel.Trace);
+                    return customBoard;
+                }, AssetLoadPriority.Exclusive);
             }
         }
     }
