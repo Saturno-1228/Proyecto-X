@@ -134,8 +134,8 @@ namespace LivingCompanionsValley
                     string action = busStop.doesTileHaveProperty(x, y, "Action", "Buildings");
                     if (action != null && (action.Contains("Message") || action.Contains("Sign")))
                     {
-                        // Moverlo aproximadamente 8 tiles a la derecha del letrero original
-                        boardTile = new Vector2(x + 7, y);
+                        // Moverlo aproximadamente 8 tiles a la derecha y 1 hacia atrás (arriba)
+                        boardTile = new Vector2(x + 7, y - 1);
                         foundSign = true;
                         break;
                     }
