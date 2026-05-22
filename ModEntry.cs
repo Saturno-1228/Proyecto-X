@@ -130,8 +130,8 @@ namespace LivingCompanionsValley
             {
                 try
                 {
-                    var signObj = ItemRegistry.Create<StardewValley.Object>("(O)WoodSign");
-                    signObj.TileLocation = boardTile;
+                    // (BC)37 es el ID del Wood Sign (Letrero de Madera)
+                    var signObj = new StardewValley.Objects.Sign(boardTile, "37");
                     signObj.IsSpawnedObject = true;
                     farm.objects.Add(boardTile, signObj);
                     Logger?.Log($"Tablero de contratación colocado en la baldosa {boardTile}.", LogLevel.Trace);
@@ -155,7 +155,9 @@ namespace LivingCompanionsValley
                 int doorY = farmhouse.tileY.Value + farmhouse.humanDoor.Y;
                 return new Vector2(doorX - 2, doorY);
             }
-            return new Vector2(62, 15); // Fallback
+            
+            // Fallback cerca del buzón estándar si no se encuentra como building
+            return new Vector2(66, 16);
         }
 
         private void ProcessDailyWages()
