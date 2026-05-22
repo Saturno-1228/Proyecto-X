@@ -29,39 +29,43 @@ namespace LivingCompanionsValley.Menus
     {
         private readonly List<Applicant> _applicants = new List<Applicant>();
         private readonly List<ClickableComponent> _hireButtons = new List<ClickableComponent>();
-        private ClickableTextureComponent _closeButton = null!;
         private string _statusMessage = "";
         private int _statusTimer = 0;
+        private Texture2D _billboardTexture;
 
-        public HiringLedgerMenu() : base(0, 0, 800, 600, true)
+        public HiringLedgerMenu() : base(0, 0, 1352, 792, true)
         {
+            _billboardTexture = Game1.temporaryContent.Load<Texture2D>("LooseSprites\\SpecialOrdersBoard");
+
             // Centrar el menú en la pantalla
-            this.xPositionOnScreen = (Game1.uiViewport.Width - this.width) / 2;
-            this.yPositionOnScreen = (Game1.uiViewport.Height - this.height) / 2;
+            Vector2 center = Utility.getTopLeftPositionForCenteringOnScreen(width, height);
+            this.xPositionOnScreen = (int)center.X;
+            this.yPositionOnScreen = (int)center.Y;
 
             // Generar dos aplicantes procedurales
             GenerateApplicants();
 
-            // Configurar botón de cerrar nativo
-            _closeButton = new ClickableTextureComponent(
-                new Rectangle(this.xPositionOnScreen + this.width - 36, this.yPositionOnScreen - 8, 48, 48),
+            // Configurar botón de cerrar nativo (esquina superior derecha)
+            this.upperRightCloseButton = new ClickableTextureComponent(
+                new Rectangle(this.xPositionOnScreen + this.width - 20, this.yPositionOnScreen, 48, 48),
                 Game1.mouseCursors,
                 new Rectangle(337, 494, 12, 12),
                 4f
             );
 
-            // Configurar botones de contratación
-            for (int i = 0; i < _applicants.Count; i++)
-            {
-                int btnX = this.xPositionOnScreen + this.width - 220;
-                int btnY = this.yPositionOnScreen + 150 + (i * 180);
-                
-                _hireButtons.Add(new ClickableComponent(
-                    new Rectangle(btnX, btnY, 180, 60),
-                    i.ToString(),
-                    "Contratar"
-                ));
-            }
+            // Configurar botones de contratación imitando AcceptQuest
+            int btnWidth = (int)Game1.dialogueFont.MeasureString("Contratar").X + 24;
+            int btnHeight = (int)Game1.dialogueFont.MeasureString("Contratar").Y + 24;
+
+            _hireButtons.Add(new ClickableComponent(
+                new Rectangle(this.xPositionOnScreen + this.width / 4 - 128, this.yPositionOnScreen + this.height - 128, btnWidth, btnHeight),
+                "0"
+            ));
+
+            _hireButtons.Add(new ClickableComponent(
+                new Rectangle(this.xPositionOnScreen + this.width * 3 / 4 - 128, this.yPositionOnScreen + this.height - 128, btnWidth, btnHeight),
+                "1"
+            ));
         }
 
         private void GenerateApplicants()
@@ -98,12 +102,7 @@ namespace LivingCompanionsValley.Menus
 
         public override void receiveLeftClick(int x, int y, bool playSound = true)
         {
-            if (_closeButton.containsPoint(x, y))
-            {
-                Game1.playSound("bigDeSelect");
-                this.exitThisMenu();
-                return;
-            }
+            base.receiveLeftClick(x, y, playSound);
 
             for (int i = 0; i < _hireButtons.Count; i++)
             {
@@ -176,69 +175,64 @@ namespace LivingCompanionsValley.Menus
 
         public override void draw(SpriteBatch b)
         {
-            // Fondo oscuro
-            b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.5f);
+            if (!Game1.options.showClearBackgrounds)
+            {
+                b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.75f);
+            }
 
-            // Panel de madera principal
-            IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18), xPositionOnScreen, yPositionOnScreen, width, height, Color.White, 4f);
+            // Fondo del Tablero de Órdenes Especiales original
+            b.Draw(_billboardTexture, new Vector2(xPositionOnScreen, yPositionOnScreen), new Rectangle(0, 0, 338, 198), Color.White, 0f, Vector2.Zero, 4f, SpriteEffects.None, 1f);
 
-            // Botón de cerrar
-            _closeButton.draw(b);
-
-            // Título
-            string title = "Tablero de Contratación";
-            Utility.drawTextWithShadow(b, title, Game1.dialogueFont, new Vector2(xPositionOnScreen + 60, yPositionOnScreen + 40), Game1.textColor, 1.2f);
-            
-            string desc = "Contrata trabajadores locales para la granja. Requiere una cabaña libre por trabajador.";
-            Utility.drawTextWithShadow(b, desc, Game1.smallFont, new Vector2(xPositionOnScreen + 60, yPositionOnScreen + 95), Color.DarkGray);
-
-            // Dibujar perfiles de aplicantes
+            // Dibujar perfiles de aplicantes (Left y Right)
             for (int i = 0; i < _applicants.Count; i++)
             {
                 var app = _applicants[i];
-                int cardY = yPositionOnScreen + 140 + (i * 180);
-                int cardX = xPositionOnScreen + 50;
+                int startX = xPositionOnScreen + (i == 0 ? 96 : 736);
+                int headerY = yPositionOnScreen + 128;
 
-                // Dibujar recuadro de perfil
-                IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 396, 15, 15), cardX, cardY, width - 100, 160, Color.White, 4f, false);
+                // Título: Nombre
+                string nameStr = $"Se ofrece: {app.State.Name}";
+                Utility.drawTextWithShadow(b, nameStr, Game1.dialogueFont, new Vector2(startX + 256 - Game1.dialogueFont.MeasureString(nameStr).X / 2f, headerY), Game1.textColor, 1f, -1f, -1, -1, 0.5f);
 
-                // Dibujar al granjero dummy (animación de pie)
-                app.Dummy.Position = new Vector2(cardX + 40, cardY + 40);
-                app.Dummy.FacingDirection = 2; // Hacia el frente
-                app.Dummy.draw(b);
+                // Sprite animado del trabajador
+                app.Dummy.FarmerRenderer.drawMiniPortrat(b, new Vector2(startX, headerY - 10), 0.00011f, 3f, 2, app.Dummy);
 
-                // Nombre e información
-                Utility.drawTextWithShadow(b, app.State.Name, Game1.dialogueFont, new Vector2(cardX + 130, cardY + 25), Game1.textColor);
-                string stats = $"Agricultura: Nv. {app.State.FarmingLevel} | Recolección: Nv. {app.State.ForagingLevel}";
-                Utility.drawTextWithShadow(b, stats, Game1.smallFont, new Vector2(cardX + 130, cardY + 70), Color.DimGray);
+                // Descripción simulando un anuncio
+                string description = $"¡Hola! Busco empleo estable en tu granja. \n" +
+                                     $"Cobro {app.State.Wage}g al día.\n" +
+                                     $"Habilidades:\n" +
+                                     $"Agricultura Nv.{app.State.FarmingLevel}\n" +
+                                     $"Recolección Nv.{app.State.ForagingLevel}\n\n" +
+                                     $"Depósito Inicial: {app.HireCost}g (Alojamiento Requerido)";
                 
-                string costText = $"Costo Diario: {app.State.Wage}g | Depósito Inicial: {app.HireCost}g";
-                Utility.drawTextWithShadow(b, costText, Game1.smallFont, new Vector2(cardX + 130, cardY + 105), Color.DarkGoldenrod);
+                string parsedDesc = Game1.parseText(description, Game1.dialogueFont, 480);
+                Utility.drawTextWithShadow(b, parsedDesc, Game1.dialogueFont, new Vector2(startX, yPositionOnScreen + 220), Game1.textColor, 0.8f, -1f, -1, -1, 0.5f);
 
                 // Botón de Contratar
                 var btn = _hireButtons[i];
-                IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18), btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, Color.White, 4f);
-                
-                Vector2 labelSize = Game1.dialogueFont.MeasureString(btn.label);
-                Vector2 labelPos = new Vector2(
-                    btn.bounds.X + (btn.bounds.Width - labelSize.X) / 2,
-                    btn.bounds.Y + (btn.bounds.Height - labelSize.Y) / 2 - 4
-                );
-                Utility.drawTextWithShadow(b, btn.label, Game1.dialogueFont, labelPos, Game1.textColor);
+                bool isHovered = btn.containsPoint(Game1.getMouseX(), Game1.getMouseY());
+                float scale = isHovered ? 1.2f : 1f;
+
+                IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(403, 373, 9, 9), btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, scale > 1f ? Color.LightPink : Color.White, 4f * scale);
+                Utility.drawTextWithShadow(b, "Contratar", Game1.dialogueFont, new Vector2(btn.bounds.X + 12, btn.bounds.Y + 16), Game1.textColor);
             }
 
-            // Dibujar mensaje de estado
-            if (_statusTimer > 0 && !string.IsNullOrEmpty(_statusMessage))
+            // Mensajes de estado (errores, éxito)
+            if (_statusTimer > 0)
             {
-                Vector2 msgSize = Game1.dialogueFont.MeasureString(_statusMessage);
-                Vector2 msgPos = new Vector2(
-                    xPositionOnScreen + (width - msgSize.X) / 2,
-                    yPositionOnScreen + height - 80
-                );
-                Utility.drawTextWithShadow(b, _statusMessage, Game1.dialogueFont, msgPos, Color.Red);
+                int textWidth = (int)Game1.dialogueFont.MeasureString(_statusMessage).X;
+                IClickableMenu.drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18), 
+                    this.xPositionOnScreen + this.width / 2 - textWidth / 2 - 30, 
+                    this.yPositionOnScreen + this.height - 80, 
+                    textWidth + 60, 80, Color.White, 4f);
+                Utility.drawTextWithShadow(b, _statusMessage, Game1.dialogueFont, 
+                    new Vector2(this.xPositionOnScreen + this.width / 2 - textWidth / 2, this.yPositionOnScreen + this.height - 60), 
+                    Color.DarkRed);
             }
 
-            drawMouse(b);
+            base.draw(b); // Dibuja upperRightCloseButton automáticamente
+            Game1.mouseCursorTransparency = 1f;
+            this.drawMouse(b);
         }
     }
 }
