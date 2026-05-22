@@ -144,7 +144,7 @@ namespace LivingCompanionsValley
             }
 
             // Buscar si ya existe el tablero gigante
-            StardewValley.Objects.Furniture existingBoard = null;
+            StardewValley.Objects.Furniture? existingBoard = null;
             foreach (var f in busStop.furniture)
             {
                 if (f.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
