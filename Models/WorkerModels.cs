@@ -28,6 +28,14 @@ namespace LivingCompanionsValley.Models
         PelicanTown
     }
 
+    public enum WorkerRoutineState
+    {
+        Sleeping,
+        LeavingCabin,
+        Wandering,
+        ReturningCabin
+    }
+
     /// <summary>
     /// Representa un objeto serializable de forma segura para guardar el inventario del trabajador.
     /// Evita serializar directamente clases complejas de Stardew Valley que contienen NetFields.

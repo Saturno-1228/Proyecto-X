@@ -141,3 +141,26 @@ Logramos migrar exitosamente el mod desde una arquitectura acoplada y saturada (
    - Expandir el `ContextBuilderService` para que escanee un radio de casillas alrededor del jugador, detectando monstruos, otros NPCs cercanos, cultivos específicos y el estado financiero/salud del jugador para comentarios ultra-contextuales.
 6. **Misiones Generadas Dinámicamente (Dynamic Quests):**
    - La IA puede inyectar misiones reales en el Diario de Misiones de Stardew Valley mediante el diálogo (ej. "Tráeme 50 de madera").
+
+---
+
+### SPECIALWORKERS (Notas de Desarrollo)
+*(Nota: Esta sección es temporal. Una vez que toda la lógica de los trabajadores contratables esté integrada y funcional, esta parte será eliminada y reemplazada por una "Guía de Uso" final para el usuario).*
+
+**Lo que hemos logrado hasta ahora:**
+- **Generación Procedural y ADN:** Se implementó WorkerGenerator.cs. Los trabajadores ya no son clones; reciben géneros, fenotipos de piel/cabello que respetan la estética del juego, nombres coherentes, y rasgos psicológicos (Workaholic, Clumsy, etc.).
+- **Economía y Habilidades:** El salario de contratación se calcula dinámicamente basado en los niveles de habilidades, a una tasa justa de 8.0g por nivel de habilidad.
+- **UI Nativa Inmersiva:** Rediseñamos el HiringLedgerMenu para que funcione como un contrato oficial inmersivo. Ya no hay texto en 3D borroso, se utilizan los iconos nativos del juego para las habilidades y la legibilidad es perfecta.
+
+**Bug Actual (Estado Congelado):**
+- **Problema:** Al contratar a un trabajador, éste es instanciado pero se queda completamente congelado como estatua.
+- **Causa Raíz:** Intenté inyectar un "cerebro vagabundo" temporal en WorkerNPC.cs, pero el archivo fuente estaba bloqueado por el editor de código del usuario (Visual Studio). El motor del agente devolvió Access is denied, provocando que la inyección de código fallara. El juego sigue corriendo la versión vieja del código donde no existe motor de movimiento y están atrapados en el estado "Descansando".
+
+**Plan de Acción Inmediato (El Motor de Rutinas):**
+En la siguiente sesión de chat, con los archivos .cs liberados y el juego cerrado, inyectaré la Máquina de Estados Diaria arquitectónica para resolver esto y además dotarlos de lógica realista de cabañas:
+- **Asignación de Cabañas:** Se revertirá el punto de aparición para que el NPC se teletransporte a su cabaña al ser contratado. Las cabañas ahora actúan como su "casa", igual que los jugadores.
+- **Ciclo de Vida (WorkerRoutineState):**
+  - **Sleeping:** Por la noche el NPC desaparecerá o irá a su cama en la cabaña.
+  - **LeavingCabin:** A las 6:00 AM el NPC se teletransportará mágicamente de su cabaña al exterior (la Granja) para empezar el día.
+  - **Wandering:** Durante el día (7:00 AM - 11:00 PM), caminará de forma aleatoria por la granja, simulando actividad.
+  - **ReturningCabin:** A las 11:00 PM, el NPC buscará la puerta exterior de su cabaña (building.humanDoor) y entrará a dormir.

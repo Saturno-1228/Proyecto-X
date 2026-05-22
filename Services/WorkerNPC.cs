@@ -18,6 +18,7 @@ namespace LivingCompanionsValley.Services
         // Temporizador interno para tareas
         public int TaskTicks { get; set; } = 0;
         public string CurrentTaskName { get; set; } = "Descansando";
+        public WorkerRoutineState RoutineState { get; set; } = WorkerRoutineState.Sleeping;
 
         public WorkerNPC(WorkerState state, Vector2 tilePos, string locationName) 
             : base()
@@ -159,7 +160,9 @@ namespace LivingCompanionsValley.Services
         {
             base.update(time, location);
 
-            if (location is Farm farm)
+            ProcessRoutineStateMachine();
+
+            if (location is Farm farm && RoutineState == WorkerRoutineState.Wandering)
             {
                 TaskTicks++;
                 
@@ -180,6 +183,96 @@ namespace LivingCompanionsValley.Services
                     }
                 }
             }
+        }
+
+        private void ProcessRoutineStateMachine()
+        {
+            int timeOfDay = Game1.timeOfDay;
+
+            // 6:00 AM - Dejar la cabaña (Teletransporte inmediato a la puerta exterior)
+            if (timeOfDay >= 600 && timeOfDay < 700 && RoutineState == WorkerRoutineState.Sleeping)
+            {
+                RoutineState = WorkerRoutineState.LeavingCabin;
+                TeleportOutsideCabin();
+            }
+            // 7:00 AM - Empieza a trabajar/vagar
+            else if (timeOfDay >= 700 && timeOfDay < 2300 && (RoutineState == WorkerRoutineState.LeavingCabin || RoutineState == WorkerRoutineState.Sleeping))
+            {
+                RoutineState = WorkerRoutineState.Wandering;
+                if (this.currentLocation?.Name != "Farm") TeleportOutsideCabin(); 
+            }
+            // 11:00 PM - Regresar a la cabaña caminando
+            else if (timeOfDay >= 2300 && timeOfDay < 2400 && RoutineState == WorkerRoutineState.Wandering)
+            {
+                RoutineState = WorkerRoutineState.ReturningCabin;
+                PathfindToCabin();
+            }
+            // 12:00 AM (Medianoche) - Emergencia: Teletransportar a la cabaña si no ha llegado
+            else if (timeOfDay >= 2400 && RoutineState == WorkerRoutineState.ReturningCabin)
+            {
+                if (this.currentLocation?.Name != State.CabinName)
+                {
+                    RoutineState = WorkerRoutineState.Sleeping;
+                    TeleportInsideCabin();
+                }
+            }
+        }
+
+        public void WarpTo(string locationName, Vector2 tile)
+        {
+            var newLoc = Game1.getLocationFromName(locationName);
+            if (newLoc != null && this.currentLocation != newLoc)
+            {
+                this.currentLocation?.characters.Remove(this);
+                newLoc.characters.Add(this);
+                this.currentLocation = newLoc;
+            }
+            this.Position = tile * 64f;
+        }
+
+        private void TeleportOutsideCabin()
+        {
+            var farm = Game1.getFarm();
+            var cabin = farm.buildings.FirstOrDefault(b => b.indoors.Value?.Name == State.CabinName);
+            if (cabin != null)
+            {
+                WarpTo("Farm", new Vector2(cabin.tileX.Value + cabin.humanDoor.X, cabin.tileY.Value + cabin.humanDoor.Y + 1));
+            }
+            else
+            {
+                WarpTo("Farm", new Vector2(64, 15));
+            }
+            CurrentTaskName = "Yendo al trabajo";
+        }
+
+        private void PathfindToCabin()
+        {
+            CurrentTaskName = "Yendo a dormir";
+            var farm = Game1.getFarm();
+            var cabin = farm.buildings.FirstOrDefault(b => b.indoors.Value?.Name == State.CabinName);
+            
+            if (cabin != null && this.currentLocation == farm)
+            {
+                Point doorPoint = new Point(cabin.tileX.Value + cabin.humanDoor.X, cabin.tileY.Value + cabin.humanDoor.Y + 1);
+                this.controller = new PathFindController(this, farm, doorPoint, -1, (c, l) =>
+                {
+                    RoutineState = WorkerRoutineState.Sleeping;
+                    TeleportInsideCabin();
+                });
+            }
+            else
+            {
+                RoutineState = WorkerRoutineState.Sleeping;
+                TeleportInsideCabin();
+            }
+        }
+
+        public void TeleportInsideCabin()
+        {
+            // Coordenadas cercanas a la cama en una cabaña típica (o la entrada si no la encontramos)
+            WarpTo(State.CabinName, new Vector2(3, 4));
+            this.controller = null;
+            CurrentTaskName = "Durmiendo";
         }
 
         private void WanderRandomly(Farm farm)
