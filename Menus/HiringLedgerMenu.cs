@@ -70,31 +70,9 @@ namespace LivingCompanionsValley.Menus
 
         private void GenerateApplicants()
         {
-            var rand = new Random();
-            string[] names = { "Pedro", "Juan", "Salome", "Mateo", "Lucas", "Maria", "Laura", "Carmen", "Sofia" };
-            
             for (int i = 0; i < 2; i++)
             {
-                string name = names[rand.Next(names.Length)] + $" {rand.Next(10, 99)}";
-                var state = new WorkerState
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    Name = name,
-                    Wage = rand.Next(40, 120),
-                    FarmingLevel = rand.Next(1, 6),
-                    ForagingLevel = rand.Next(1, 6),
-                    SkinColor = rand.Next(0, 6),
-                    HairStyle = rand.Next(0, 36),
-                    HairColorR = rand.Next(50, 255),
-                    HairColorG = rand.Next(50, 255),
-                    HairColorB = rand.Next(50, 255),
-                    Shirt = rand.Next(0, 100),
-                    Pants = rand.Next(0, 4),
-                    PantsColorR = rand.Next(50, 255),
-                    PantsColorG = rand.Next(50, 255),
-                    PantsColorB = rand.Next(50, 255)
-                };
-
+                WorkerState state = WorkerGenerator.GenerateApplicant();
                 int hireCost = state.Wage * 3; // Depósito inicial de 3 días de salario
                 _applicants.Add(new Applicant(state, hireCost));
             }
@@ -190,23 +168,36 @@ namespace LivingCompanionsValley.Menus
                 int startX = xPositionOnScreen + (i == 0 ? 96 : 736);
                 int headerY = yPositionOnScreen + 128;
 
-                // Título: Nombre
-                string nameStr = $"Se ofrece: {app.State.Name}";
+                // Título: Nombre Completo
+                string nameStr = $"Se ofrece: {app.State.Name} {app.State.Surname}";
                 Utility.drawTextWithShadow(b, nameStr, Game1.dialogueFont, new Vector2(startX + 256 - Game1.dialogueFont.MeasureString(nameStr).X / 2f, headerY), Game1.textColor, 1f, -1f, -1, -1, 0.5f);
 
                 // Sprite animado del trabajador
                 app.Dummy.FarmerRenderer.drawMiniPortrat(b, new Vector2(startX, headerY - 10), 0.00011f, 3f, 2, app.Dummy);
 
+                // Traducir rasgo para visualización
+                string traitStr = app.State.Trait switch
+                {
+                    WorkerTrait.Workaholic => "Adicto al Trabajo (+20% Salario, Eficiente)",
+                    WorkerTrait.GreenThumb => "Mano Verde (+10% Salario, Cultivos)",
+                    WorkerTrait.Clumsy => "Torpe (-15% Salario, Lento)",
+                    WorkerTrait.EarlyBird => "Madrugador (Llega temprano)",
+                    WorkerTrait.NightOwl => "Búho Nocturno (+10% Salario, Nocturno)",
+                    WorkerTrait.CitySlicker => "Citadino (+15% Salario, Recolección)",
+                    _ => "Ninguno"
+                };
+
                 // Descripción simulando un anuncio
                 string description = $"¡Hola! Busco empleo estable en tu granja. \n" +
                                      $"Cobro {app.State.Wage}g al día.\n" +
                                      $"Habilidades:\n" +
-                                     $"Agricultura Nv.{app.State.FarmingLevel}\n" +
-                                     $"Recolección Nv.{app.State.ForagingLevel}\n\n" +
-                                     $"Depósito Inicial: {app.HireCost}g (Alojamiento Requerido)";
+                                     $"Agr Nv.{app.State.FarmingLevel} | Rec Nv.{app.State.ForagingLevel} | Min Nv.{app.State.MiningLevel}\n" +
+                                     $"Pes Nv.{app.State.FishingLevel} | Cbt Nv.{app.State.CombatLevel}\n" +
+                                     $"Rasgo: {traitStr}\n\n" +
+                                     $"Depósito Inicial: {app.HireCost}g (Cabaña Requerida)";
                 
                 string parsedDesc = Game1.parseText(description, Game1.dialogueFont, 480);
-                Utility.drawTextWithShadow(b, parsedDesc, Game1.dialogueFont, new Vector2(startX, yPositionOnScreen + 220), Game1.textColor, 0.8f, -1f, -1, -1, 0.5f);
+                Utility.drawTextWithShadow(b, parsedDesc, Game1.dialogueFont, new Vector2(startX, yPositionOnScreen + 220), Game1.textColor, 0.75f, -1f, -1, -1, 0.5f);
 
                 // Botón de Contratar
                 var btn = _hireButtons[i];

@@ -3,6 +3,32 @@ using System.Collections.Generic;
 
 namespace LivingCompanionsValley.Models
 {
+    public enum GenderArchetype
+    {
+        Male,
+        Female,
+        Neutral
+    }
+
+    public enum WorkerTrait
+    {
+        None,
+        Workaholic,
+        GreenThumb,
+        Clumsy,
+        EarlyBird,
+        NightOwl,
+        CitySlicker
+    }
+
+    public enum AestheticProfile
+    {
+        Lighter,
+        Medium,
+        Dark,
+        PelicanTown
+    }
+
     /// <summary>
     /// Representa un objeto serializable de forma segura para guardar el inventario del trabajador.
     /// Evita serializar directamente clases complejas de Stardew Valley que contienen NetFields.
@@ -23,9 +49,17 @@ namespace LivingCompanionsValley.Models
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
+        public string Surname { get; set; } = "";
+        public GenderArchetype Gender { get; set; } = GenderArchetype.Neutral;
+        public WorkerTrait Trait { get; set; } = WorkerTrait.None;
+        public AestheticProfile Aesthetic { get; set; } = AestheticProfile.PelicanTown;
+
         public int Wage { get; set; } = 50; // Salario en oro
         public int FarmingLevel { get; set; } = 1;
         public int ForagingLevel { get; set; } = 1;
+        public int MiningLevel { get; set; } = 1;
+        public int FishingLevel { get; set; } = 1;
+        public int CombatLevel { get; set; } = 1;
         
         // Cabaña asignada
         public string CabinName { get; set; } = "Cabin";
