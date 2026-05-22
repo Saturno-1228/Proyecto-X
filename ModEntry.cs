@@ -65,38 +65,6 @@ namespace LivingCompanionsValley
             helper.Events.GameLoop.Saving += OnSaving;
             helper.Events.GameLoop.Saved += OnSaved;
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
-
-            // Comandos de consola
-            helper.ConsoleCommands.Add("lc_spawnboard", "Spawnea el letrero de contratación en la baldosa frente al jugador", OnSpawnBoardCommand);
-        }
-
-        private void OnSpawnBoardCommand(string command, string[] args)
-        {
-            if (!Context.IsWorldReady) return;
-            var farm = Game1.getFarm();
-            if (farm == null) return;
-
-            Vector2 tile = Game1.player.Tile;
-            // Spawnea enfrente del jugador dependiendo de la dirección
-            switch (Game1.player.FacingDirection)
-            {
-                case 0: tile.Y -= 1; break; // Arriba
-                case 1: tile.X += 1; break; // Derecha
-                case 2: tile.Y += 1; break; // Abajo
-                case 3: tile.X -= 1; break; // Izquierda
-            }
-
-            try
-            {
-                var signObj = new StardewValley.Objects.Sign(tile, "37");
-                if (farm.objects.ContainsKey(tile)) farm.objects.Remove(tile);
-                farm.objects.Add(tile, signObj);
-                Logger?.Log($"Letrero spawneado manualmente en {tile}.", LogLevel.Info);
-            }
-            catch (Exception ex)
-            {
-                Logger?.Log($"Error al spawnear letrero: {ex.Message}", LogLevel.Error);
-            }
         }
 
         public List<WorkerNPC> GetHiredWorkers()
@@ -143,52 +111,8 @@ namespace LivingCompanionsValley
             }
             Logger?.Log("Decaimiento diario procesado.", LogLevel.Trace);
 
-            // 2. Colocar el letrero físico de contratación (Tablero Ledger)
-            PlaceHiringBoard();
-
             // 3. Procesar salarios y bitácora diaria de trabajadores
             ProcessDailyWages();
-        }
-
-        private void PlaceHiringBoard()
-        {
-            var farm = Game1.getFarm();
-            if (farm == null) return;
-
-            Vector2 boardTile = GetHiringBoardTile();
-
-            // Si no hay ningún objeto en esa baldosa, colocamos el letrero de madera
-            if (!farm.objects.ContainsKey(boardTile))
-            {
-                try
-                {
-                    // (BC)37 es el ID del Wood Sign (Letrero de Madera)
-                    var signObj = new StardewValley.Objects.Sign(boardTile, "37");
-                    farm.objects.Add(boardTile, signObj);
-                    Logger?.Log($"Tablero de contratación colocado en la baldosa {boardTile}.", LogLevel.Info);
-                }
-                catch (Exception ex)
-                {
-                    Logger?.Log($"Error colocando tablero de contratación: {ex.Message}", LogLevel.Warn);
-                }
-            }
-        }
-
-        private Vector2 GetHiringBoardTile()
-        {
-            var farm = Game1.getFarm();
-            if (farm == null) return new Vector2(62, 15);
-
-            var farmhouse = farm.buildings.FirstOrDefault(b => b.buildingType.Value == "Farmhouse");
-            if (farmhouse != null)
-            {
-                int doorX = farmhouse.tileX.Value + farmhouse.humanDoor.X;
-                int doorY = farmhouse.tileY.Value + farmhouse.humanDoor.Y;
-                return new Vector2(doorX - 2, doorY);
-            }
-            
-            // Fallback cerca del buzón estándar si no se encuentra como building
-            return new Vector2(66, 16);
         }
 
         private void ProcessDailyWages()
@@ -239,12 +163,22 @@ namespace LivingCompanionsValley
                 var clickedTile = e.Cursor.GrabTile;
                 if (Game1.currentLocation is Farm farm)
                 {
-                    if (farm.objects.TryGetValue(clickedTile, out var obj) && (obj.QualifiedItemId == "(BC)37" || obj.Name == "Wood Sign"))
+                    // Buscar en los muebles en la posición clicada
+                    var furnitureList = farm.furniture;
+                    foreach (var furniture in furnitureList)
                     {
-                        // Abrir Ledger de Contratación
-                        Game1.playSound("shwip");
-                        Game1.activeClickableMenu = new HiringLedgerMenu();
-                        this.Helper.Input.Suppress(e.Button); // Evitar cartel nativo
+                        if (furniture.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
+                        {
+                            // Verificar si el clic cae dentro del bounding box del mueble
+                            if (furniture.GetBoundingBox().Contains((int)(clickedTile.X * 64), (int)(clickedTile.Y * 64)) ||
+                                Vector2.Distance(clickedTile, furniture.TileLocation) <= 2f)
+                            {
+                                Game1.playSound("shwip");
+                                Game1.activeClickableMenu = new HiringLedgerMenu();
+                                this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -347,6 +281,35 @@ namespace LivingCompanionsValley
                     e.LoadFromModFile<Texture2D>(customPortraitPath, AssetLoadPriority.Medium);
                     Logger?.Log($"¡Retrato LCV de {npcName} inyectado con éxito!", LogLevel.Trace);
                 }
+            }
+            else if (e.NameWithoutLocale.IsEquivalentTo("Data/Furniture"))
+            {
+                e.Edit(asset =>
+                {
+                    var data = asset.AsDictionary<string, string>();
+                    // Name / Type / Tilesheet Size / Bounding Box Size / Rotations / Price / Placement Restriction / Display Name / Sprite Index / Texture / Exclude from Shop / Context Tags
+                    string furnitureString = "Tablero de Empleos/other/3 3/3 1/1/1/2/Tablero de Empleos/0/LooseSprites\\SpecialOrdersBoard/false/";
+                    data.Data["LivingCompanions_HiringBoard"] = furnitureString;
+                });
+            }
+            else if (e.NameWithoutLocale.IsEquivalentTo("Data/Shops"))
+            {
+                e.Edit(asset =>
+                {
+                    var data = asset.AsDictionary<string, StardewValley.GameData.Shops.ShopData>();
+                    if (data.Data.TryGetValue("Carpenter", out var robinShop))
+                    {
+                        robinShop.Items.Add(new StardewValley.GameData.Shops.ShopItemData
+                        {
+                            Id = "LivingCompanions_HiringBoard_Item",
+                            ItemId = "(F)LivingCompanions_HiringBoard",
+                            Price = 1,
+                            AvailableStock = -1,
+                            Condition = null // Disponible siempre
+                        });
+                        Logger?.Log("Tablero de Empleos añadido a la tienda de Robin.", LogLevel.Trace);
+                    }
+                });
             }
         }
     }
