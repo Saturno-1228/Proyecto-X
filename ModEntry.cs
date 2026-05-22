@@ -65,6 +65,38 @@ namespace LivingCompanionsValley
             helper.Events.GameLoop.Saving += OnSaving;
             helper.Events.GameLoop.Saved += OnSaved;
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
+
+            // Comandos de consola
+            helper.ConsoleCommands.Add("lc_spawnboard", "Spawnea el letrero de contratación en la baldosa frente al jugador", OnSpawnBoardCommand);
+        }
+
+        private void OnSpawnBoardCommand(string command, string[] args)
+        {
+            if (!Context.IsWorldReady) return;
+            var farm = Game1.getFarm();
+            if (farm == null) return;
+
+            Vector2 tile = Game1.player.Tile;
+            // Spawnea enfrente del jugador dependiendo de la dirección
+            switch (Game1.player.FacingDirection)
+            {
+                case 0: tile.Y -= 1; break; // Arriba
+                case 1: tile.X += 1; break; // Derecha
+                case 2: tile.Y += 1; break; // Abajo
+                case 3: tile.X -= 1; break; // Izquierda
+            }
+
+            try
+            {
+                var signObj = new StardewValley.Objects.Sign(tile, "37");
+                if (farm.objects.ContainsKey(tile)) farm.objects.Remove(tile);
+                farm.objects.Add(tile, signObj);
+                Logger?.Log($"Letrero spawneado manualmente en {tile}.", LogLevel.Info);
+            }
+            catch (Exception ex)
+            {
+                Logger?.Log($"Error al spawnear letrero: {ex.Message}", LogLevel.Error);
+            }
         }
 
         public List<WorkerNPC> GetHiredWorkers()
@@ -132,9 +164,8 @@ namespace LivingCompanionsValley
                 {
                     // (BC)37 es el ID del Wood Sign (Letrero de Madera)
                     var signObj = new StardewValley.Objects.Sign(boardTile, "37");
-                    signObj.IsSpawnedObject = true;
                     farm.objects.Add(boardTile, signObj);
-                    Logger?.Log($"Tablero de contratación colocado en la baldosa {boardTile}.", LogLevel.Trace);
+                    Logger?.Log($"Tablero de contratación colocado en la baldosa {boardTile}.", LogLevel.Info);
                 }
                 catch (Exception ex)
                 {
@@ -206,10 +237,9 @@ namespace LivingCompanionsValley
                 }
 
                 var clickedTile = e.Cursor.GrabTile;
-                if (Game1.currentLocation is Farm)
+                if (Game1.currentLocation is Farm farm)
                 {
-                    Vector2 boardTile = GetHiringBoardTile();
-                    if (clickedTile == boardTile)
+                    if (farm.objects.TryGetValue(clickedTile, out var obj) && (obj.QualifiedItemId == "(BC)37" || obj.Name == "Wood Sign"))
                     {
                         // Abrir Ledger de Contratación
                         Game1.playSound("shwip");
