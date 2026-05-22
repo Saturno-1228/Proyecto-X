@@ -111,8 +111,36 @@ namespace LivingCompanionsValley
             }
             Logger?.Log("Decaimiento diario procesado.", LogLevel.Trace);
 
+            // 2. Colocar el letrero físico en la parada de autobuses
+            PlaceHiringBoard();
+
             // 3. Procesar salarios y bitácora diaria de trabajadores
             ProcessDailyWages();
+        }
+
+        private void PlaceHiringBoard()
+        {
+            var busStop = Game1.getLocationFromName("BusStop");
+            if (busStop == null) return;
+
+            // Colocar cerca de la entrada a la granja, sin estorbar el camino (X=4, Y=21)
+            Vector2 boardTile = new Vector2(4, 21);
+
+            // Si no hay ningún objeto en esa baldosa, colocamos el letrero de madera
+            if (!busStop.objects.ContainsKey(boardTile))
+            {
+                try
+                {
+                    // (BC)37 es el ID del Wood Sign (Letrero de Madera)
+                    var signObj = new StardewValley.Objects.Sign(boardTile, "37");
+                    busStop.objects.Add(boardTile, signObj);
+                    Logger?.Log($"Tablero de contratación colocado permanentemente en la parada de autobuses {boardTile}.", LogLevel.Info);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.Log($"Error colocando tablero de contratación: {ex.Message}", LogLevel.Warn);
+                }
+            }
         }
 
         private void ProcessDailyWages()
@@ -161,23 +189,18 @@ namespace LivingCompanionsValley
                 }
 
                 var clickedTile = e.Cursor.GrabTile;
-                if (Game1.currentLocation is Farm farm)
+                if (Game1.currentLocation?.Name == "BusStop")
                 {
-                    // Buscar en los muebles en la posición clicada
-                    var furnitureList = farm.furniture;
-                    foreach (var furniture in furnitureList)
+                    var busStop = Game1.currentLocation;
+                    if (busStop.objects.TryGetValue(clickedTile, out var obj) && (obj.QualifiedItemId == "(BC)37" || obj.Name == "Wood Sign"))
                     {
-                        if (furniture.QualifiedItemId == "(F)LivingCompanions_HiringBoard")
+                        // Si es el cartel de contratación en la parada
+                        if (clickedTile == new Vector2(4, 21))
                         {
-                            // Verificar si el clic cae dentro del bounding box del mueble
-                            if (furniture.GetBoundingBox().Contains((int)(clickedTile.X * 64), (int)(clickedTile.Y * 64)) ||
-                                Vector2.Distance(clickedTile, furniture.TileLocation) <= 2f)
-                            {
-                                Game1.playSound("shwip");
-                                Game1.activeClickableMenu = new HiringLedgerMenu();
-                                this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
-                                return;
-                            }
+                            Game1.playSound("shwip");
+                            Game1.activeClickableMenu = new HiringLedgerMenu();
+                            this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
+                            return;
                         }
                     }
                 }
@@ -281,35 +304,6 @@ namespace LivingCompanionsValley
                     e.LoadFromModFile<Texture2D>(customPortraitPath, AssetLoadPriority.Medium);
                     Logger?.Log($"¡Retrato LCV de {npcName} inyectado con éxito!", LogLevel.Trace);
                 }
-            }
-            else if (e.NameWithoutLocale.IsEquivalentTo("Data/Furniture"))
-            {
-                e.Edit(asset =>
-                {
-                    var data = asset.AsDictionary<string, string>();
-                    // Name / Type / Tilesheet Size / Bounding Box Size / Rotations / Price / Placement Restriction / Display Name / Sprite Index / Texture / Exclude from Shop / Context Tags
-                    string furnitureString = "Tablero de Empleos/decor/3 4/3 2/1/1/2/Tablero de Empleos/0/LooseSprites\\SpecialOrdersBoard/false/";
-                    data.Data["LivingCompanions_HiringBoard"] = furnitureString;
-                });
-            }
-            else if (e.NameWithoutLocale.IsEquivalentTo("Data/Shops"))
-            {
-                e.Edit(asset =>
-                {
-                    var data = asset.AsDictionary<string, StardewValley.GameData.Shops.ShopData>();
-                    if (data.Data.TryGetValue("Carpenter", out var robinShop))
-                    {
-                        robinShop.Items.Add(new StardewValley.GameData.Shops.ShopItemData
-                        {
-                            Id = "LivingCompanions_HiringBoard_Item",
-                            ItemId = "(F)LivingCompanions_HiringBoard",
-                            Price = 1,
-                            AvailableStock = -1,
-                            Condition = null // Disponible siempre
-                        });
-                        Logger?.Log("Tablero de Empleos añadido a la tienda de Robin.", LogLevel.Trace);
-                    }
-                });
             }
         }
     }
