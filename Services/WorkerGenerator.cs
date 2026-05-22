@@ -8,7 +8,6 @@ namespace LivingCompanionsValley.Services
     {
         private static readonly string[] MaleNames = { "Pedro", "Juan", "Mateo", "Lucas", "Harvey", "Elliott", "Shane", "Sam", "Sebastian", "Clint", "Pierre", "Lewis", "Gus", "Willy" };
         private static readonly string[] FemaleNames = { "Laura", "Carmen", "Sofia", "Maria", "Penny", "Maru", "Leah", "Haley", "Emily", "Marnie", "Caroline", "Robin", "Jodi", "Abigail" };
-        private static readonly string[] NeutralNames = { "Salome", "Alex", "Sandy", "Linus", "Jas", "Vincent", "Krobus", "Dwarf" };
 
         public static WorkerState GenerateApplicant()
         {
@@ -19,18 +18,14 @@ namespace LivingCompanionsValley.Services
             };
 
             // 1. Determinar Arquetipo de Género y Nombre
-            state.Gender = (GenderArchetype)rand.Next(0, 3);
+            state.Gender = (GenderArchetype)rand.Next(0, 2);
             if (state.Gender == GenderArchetype.Male)
             {
                 state.Name = MaleNames[rand.Next(MaleNames.Length)];
             }
-            else if (state.Gender == GenderArchetype.Female)
-            {
-                state.Name = FemaleNames[rand.Next(FemaleNames.Length)];
-            }
             else
             {
-                state.Name = NeutralNames[rand.Next(NeutralNames.Length)];
+                state.Name = FemaleNames[rand.Next(FemaleNames.Length)];
             }
 
             // 2. Determinar Habilidades (1 al 10 en total, distribuidas aleatoriamente)

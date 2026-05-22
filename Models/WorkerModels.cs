@@ -6,8 +6,7 @@ namespace LivingCompanionsValley.Models
     public enum GenderArchetype
     {
         Male,
-        Female,
-        Neutral
+        Female
     }
 
     public enum WorkerTrait
@@ -50,7 +49,7 @@ namespace LivingCompanionsValley.Models
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string Surname { get; set; } = "";
-        public GenderArchetype Gender { get; set; } = GenderArchetype.Neutral;
+        public GenderArchetype Gender { get; set; } = GenderArchetype.Male;
         public WorkerTrait Trait { get; set; } = WorkerTrait.None;
         public AestheticProfile Aesthetic { get; set; } = AestheticProfile.PelicanTown;
 
