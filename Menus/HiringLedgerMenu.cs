@@ -199,26 +199,23 @@ namespace LivingCompanionsValley.Menus
 
                 // Cuadrícula de Habilidades
                 int skillsY = cardY + 90;
-                Utility.drawTextWithShadow(b, "Competencias Laborales:", Game1.dialogueFont, new Vector2(startX + 40, skillsY), Game1.textColor, 0.8f);
+                Utility.drawTextWithShadow(b, "Habilidades:", Game1.dialogueFont, new Vector2(startX + 10, skillsY), Game1.textColor, 1f);
                 
                 skillsY += 45;
-                DrawSkill(b, "Agricultura", app.State.FarmingLevel, new Rectangle(10, 428, 10, 10), startX + 40, skillsY);
-                DrawSkill(b, "Minería", app.State.MiningLevel, new Rectangle(30, 428, 10, 10), startX + 40, skillsY + 40);
-                DrawSkill(b, "Recolección", app.State.ForagingLevel, new Rectangle(60, 428, 10, 10), startX + 40, skillsY + 80);
+                DrawSkill(b, "Agricultura", app.State.FarmingLevel, new Rectangle(10, 428, 10, 10), startX + 10, skillsY);
+                DrawSkill(b, "Minería", app.State.MiningLevel, new Rectangle(30, 428, 10, 10), startX + 10, skillsY + 40);
+                DrawSkill(b, "Recolección", app.State.ForagingLevel, new Rectangle(60, 428, 10, 10), startX + 10, skillsY + 80);
                 
-                DrawSkill(b, "Pesca", app.State.FishingLevel, new Rectangle(20, 428, 10, 10), startX + 260, skillsY);
-                DrawSkill(b, "Combate", app.State.CombatLevel, new Rectangle(120, 428, 10, 10), startX + 260, skillsY + 40);
+                DrawSkill(b, "Pesca", app.State.FishingLevel, new Rectangle(20, 428, 10, 10), startX + 240, skillsY);
+                DrawSkill(b, "Combate", app.State.CombatLevel, new Rectangle(120, 428, 10, 10), startX + 240, skillsY + 40);
 
                 // Economía y Costos
                 int econY = skillsY + 130;
-                Utility.drawTextWithShadow(b, "Costos de Contratación:", Game1.dialogueFont, new Vector2(startX + 40, econY), Game1.textColor, 0.8f);
+                Utility.drawTextWithShadow(b, "Costos de Contratación:", Game1.dialogueFont, new Vector2(startX + 10, econY), Game1.textColor, 1f);
                 
                 econY += 45;
-                b.Draw(Game1.mouseCursors, new Vector2(startX + 40, econY), new Rectangle(293, 356, 24, 24), Color.White, 0f, Vector2.Zero, 1.2f, SpriteEffects.None, 1f);
-                Utility.drawTextWithShadow(b, $"Salario Diario: {app.State.Wage}g", Game1.smallFont, new Vector2(startX + 75, econY + 4), Game1.textColor);
-
-                b.Draw(Game1.mouseCursors, new Vector2(startX + 40, econY + 40), new Rectangle(293, 356, 24, 24), Color.White, 0f, Vector2.Zero, 1.2f, SpriteEffects.None, 1f);
-                Utility.drawTextWithShadow(b, $"Depósito (x3): {app.HireCost}g", Game1.smallFont, new Vector2(startX + 75, econY + 44), Game1.textColor);
+                Utility.drawTextWithShadow(b, $"Salario Diario: {app.State.Wage}g", Game1.smallFont, new Vector2(startX + 10, econY + 4), Game1.textColor);
+                Utility.drawTextWithShadow(b, $"Depósito Inicial: {app.HireCost}g (Alojamiento Requerido)", Game1.smallFont, new Vector2(startX + 10, econY + 44), Game1.textColor);
 
                 // Botón de Contratar
                 var btn = _hireButtons[i];
@@ -256,7 +253,7 @@ namespace LivingCompanionsValley.Menus
             Utility.drawTextWithShadow(b, name, Game1.smallFont, new Vector2(x + 36, y + 2), Game1.textColor);
             
             // Nivel (Resaltado)
-            Utility.drawTextWithShadow(b, $"Nv.{level}", Game1.smallFont, new Vector2(x + 160, y + 2), Color.DarkRed);
+            Utility.drawTextWithShadow(b, $"Nv.{level}", Game1.smallFont, new Vector2(x + 150, y + 2), Color.DarkRed);
         }
     }
 }

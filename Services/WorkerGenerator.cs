@@ -109,10 +109,10 @@ namespace LivingCompanionsValley.Services
         public static int CalculateWage(WorkerState state)
         {
             double baseWage = 20.0;
-            baseWage += state.FarmingLevel * 15.0;
-            baseWage += state.ForagingLevel * 10.0;
-            baseWage += state.MiningLevel * 12.0;
-            baseWage += state.FishingLevel * 14.0;
+            baseWage += state.FarmingLevel * 8.0;
+            baseWage += state.ForagingLevel * 8.0;
+            baseWage += state.MiningLevel * 8.0;
+            baseWage += state.FishingLevel * 8.0;
             baseWage += state.CombatLevel * 8.0;
 
             double multiplier = 1.0;
