@@ -169,35 +169,56 @@ namespace LivingCompanionsValley.Menus
                 int headerY = yPositionOnScreen + 128;
 
                 // Título: Nombre Completo
-                string nameStr = $"Se ofrece: {app.State.Name} {app.State.Surname}";
+                string nameStr = $"{app.State.Name} {app.State.Surname}";
                 Utility.drawTextWithShadow(b, nameStr, Game1.dialogueFont, new Vector2(startX + 256 - Game1.dialogueFont.MeasureString(nameStr).X / 2f, headerY), Game1.textColor, 1f, -1f, -1, -1, 0.5f);
 
-                // Sprite animado del trabajador
-                app.Dummy.FarmerRenderer.drawMiniPortrat(b, new Vector2(startX, headerY - 10), 0.00011f, 3f, 2, app.Dummy);
+                // Texto introductorio
+                string intro = "\"¡Busco empleo estable en tu granja!\"";
+                Utility.drawTextWithShadow(b, intro, Game1.smallFont, new Vector2(startX + 256 - Game1.smallFont.MeasureString(intro).X / 2f, headerY + 45), Color.DarkSlateGray);
 
-                // Traducir rasgo para visualización
+                // Sprite animado del trabajador
+                int cardY = headerY + 90;
+                app.Dummy.FarmerRenderer.drawMiniPortrat(b, new Vector2(startX + 30, cardY - 20), 0.00011f, 4f, 2, app.Dummy);
+
+                // Traducir rasgo
                 string traitStr = app.State.Trait switch
                 {
-                    WorkerTrait.Workaholic => "Adicto al Trabajo (+20% Salario, Eficiente)",
-                    WorkerTrait.GreenThumb => "Mano Verde (+10% Salario, Cultivos)",
-                    WorkerTrait.Clumsy => "Torpe (-15% Salario, Lento)",
-                    WorkerTrait.EarlyBird => "Madrugador (Llega temprano)",
-                    WorkerTrait.NightOwl => "Búho Nocturno (+10% Salario, Nocturno)",
-                    WorkerTrait.CitySlicker => "Citadino (+15% Salario, Recolección)",
+                    WorkerTrait.Workaholic => "Adicto al Trabajo",
+                    WorkerTrait.GreenThumb => "Mano Verde",
+                    WorkerTrait.Clumsy => "Torpe",
+                    WorkerTrait.EarlyBird => "Madrugador",
+                    WorkerTrait.NightOwl => "Búho Nocturno",
+                    WorkerTrait.CitySlicker => "Citadino",
                     _ => "Ninguno"
                 };
 
-                // Descripción simulando un anuncio
-                string description = $"¡Hola! Busco empleo estable en tu granja. \n" +
-                                     $"Cobro {app.State.Wage}g al día.\n" +
-                                     $"Habilidades:\n" +
-                                     $"Agr Nv.{app.State.FarmingLevel} | Rec Nv.{app.State.ForagingLevel} | Min Nv.{app.State.MiningLevel}\n" +
-                                     $"Pes Nv.{app.State.FishingLevel} | Cbt Nv.{app.State.CombatLevel}\n" +
-                                     $"Rasgo: {traitStr}\n\n" +
-                                     $"Depósito Inicial: {app.HireCost}g (Cabaña Requerida)";
+                // Información Personal
+                string genderStr = app.State.Gender == GenderArchetype.Male ? "Masculino" : "Femenino";
+                Utility.drawTextWithShadow(b, $"Género: {genderStr}", Game1.smallFont, new Vector2(startX + 130, cardY + 5), Game1.textColor);
+                Utility.drawTextWithShadow(b, $"Rasgo: {traitStr}", Game1.smallFont, new Vector2(startX + 130, cardY + 35), Game1.textColor);
+
+                // Cuadrícula de Habilidades
+                int skillsY = cardY + 90;
+                Utility.drawTextWithShadow(b, "Competencias Laborales:", Game1.dialogueFont, new Vector2(startX + 40, skillsY), Game1.textColor, 0.8f);
                 
-                string parsedDesc = Game1.parseText(description, Game1.dialogueFont, 480);
-                Utility.drawTextWithShadow(b, parsedDesc, Game1.dialogueFont, new Vector2(startX, yPositionOnScreen + 220), Game1.textColor, 0.75f, -1f, -1, -1, 0.5f);
+                skillsY += 45;
+                DrawSkill(b, "Agricultura", app.State.FarmingLevel, new Rectangle(10, 428, 10, 10), startX + 40, skillsY);
+                DrawSkill(b, "Minería", app.State.MiningLevel, new Rectangle(30, 428, 10, 10), startX + 40, skillsY + 40);
+                DrawSkill(b, "Recolección", app.State.ForagingLevel, new Rectangle(60, 428, 10, 10), startX + 40, skillsY + 80);
+                
+                DrawSkill(b, "Pesca", app.State.FishingLevel, new Rectangle(20, 428, 10, 10), startX + 260, skillsY);
+                DrawSkill(b, "Combate", app.State.CombatLevel, new Rectangle(120, 428, 10, 10), startX + 260, skillsY + 40);
+
+                // Economía y Costos
+                int econY = skillsY + 130;
+                Utility.drawTextWithShadow(b, "Costos de Contratación:", Game1.dialogueFont, new Vector2(startX + 40, econY), Game1.textColor, 0.8f);
+                
+                econY += 45;
+                b.Draw(Game1.mouseCursors, new Vector2(startX + 40, econY), new Rectangle(293, 356, 24, 24), Color.White, 0f, Vector2.Zero, 1.2f, SpriteEffects.None, 1f);
+                Utility.drawTextWithShadow(b, $"Salario Diario: {app.State.Wage}g", Game1.smallFont, new Vector2(startX + 75, econY + 4), Game1.textColor);
+
+                b.Draw(Game1.mouseCursors, new Vector2(startX + 40, econY + 40), new Rectangle(293, 356, 24, 24), Color.White, 0f, Vector2.Zero, 1.2f, SpriteEffects.None, 1f);
+                Utility.drawTextWithShadow(b, $"Depósito (x3): {app.HireCost}g", Game1.smallFont, new Vector2(startX + 75, econY + 44), Game1.textColor);
 
                 // Botón de Contratar
                 var btn = _hireButtons[i];
@@ -224,6 +245,18 @@ namespace LivingCompanionsValley.Menus
             base.draw(b); // Dibuja upperRightCloseButton automáticamente
             Game1.mouseCursorTransparency = 1f;
             this.drawMouse(b);
+        }
+
+        private void DrawSkill(SpriteBatch b, string name, int level, Rectangle sourceRect, int x, int y)
+        {
+            // Icono nativo de la habilidad
+            b.Draw(Game1.mouseCursors, new Vector2(x, y), sourceRect, Color.White, 0f, Vector2.Zero, 3f, SpriteEffects.None, 1f);
+            
+            // Nombre de la habilidad
+            Utility.drawTextWithShadow(b, name, Game1.smallFont, new Vector2(x + 36, y + 2), Game1.textColor);
+            
+            // Nivel (Resaltado)
+            Utility.drawTextWithShadow(b, $"Nv.{level}", Game1.smallFont, new Vector2(x + 160, y + 2), Color.DarkRed);
         }
     }
 }
