@@ -123,8 +123,25 @@ namespace LivingCompanionsValley
             var busStop = Game1.getLocationFromName("BusStop");
             if (busStop == null) return;
 
-            // Colocar cerca de la entrada a la granja, sin estorbar el camino (X=4, Y=21)
-            Vector2 boardTile = new Vector2(4, 21);
+            Vector2 boardTile = new Vector2(4, 21); // Default
+            
+            // Buscar el cartel direccional (Action = Message ...) en la capa Buildings
+            bool foundSign = false;
+            for (int x = 0; x < busStop.Map.Layers[0].LayerWidth; x++)
+            {
+                for (int y = 0; y < busStop.Map.Layers[0].LayerHeight; y++)
+                {
+                    string action = busStop.doesTileHaveProperty(x, y, "Action", "Buildings");
+                    if (action != null && (action.Contains("Message") || action.Contains("Sign")))
+                    {
+                        // Encontramos el cartel direccional! Lo ponemos justo a la izquierda
+                        boardTile = new Vector2(x - 1, y);
+                        foundSign = true;
+                        break;
+                    }
+                }
+                if (foundSign) break;
+            }
 
             // Si no hay ningún objeto en esa baldosa, colocamos el letrero de madera
             if (!busStop.objects.ContainsKey(boardTile))
@@ -194,14 +211,11 @@ namespace LivingCompanionsValley
                     var busStop = Game1.currentLocation;
                     if (busStop.objects.TryGetValue(clickedTile, out var obj) && (obj.QualifiedItemId == "(BC)37" || obj.Name == "Wood Sign"))
                     {
-                        // Si es el cartel de contratación en la parada
-                        if (clickedTile == new Vector2(4, 21))
-                        {
-                            Game1.playSound("shwip");
-                            Game1.activeClickableMenu = new HiringLedgerMenu();
-                            this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
-                            return;
-                        }
+                        // Si es un cartel en la parada de autobuses, asumimos que es el nuestro
+                        Game1.playSound("shwip");
+                        Game1.activeClickableMenu = new HiringLedgerMenu();
+                        this.Helper.Input.Suppress(e.Button); // Evitar interacción normal
+                        return;
                     }
                 }
             }
@@ -244,6 +258,9 @@ namespace LivingCompanionsValley
                 RegisterAndSpawnWorker(state);
             }
             Logger?.Log($"Cargados {_activeWorkers.Count} trabajadores de la partida guardada.", LogLevel.Info);
+
+            // Colocar el letrero inmediatamente al cargar la partida (para no tener que esperar a dormir)
+            PlaceHiringBoard();
         }
 
         private void OnSaving(object? sender, SavingEventArgs e)
