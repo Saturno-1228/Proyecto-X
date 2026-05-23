@@ -262,7 +262,7 @@ namespace LivingCompanionsValley.Services
             }
 
             _dummyFarmer.Position = this.Position;
-            _dummyFarmer.faceDirection(this.FacingDirection);
+            _dummyFarmer.FacingDirection = this.FacingDirection;
             _dummyFarmer.currentLocation = this.currentLocation;
 
             _dummyFarmer.draw(b);
