@@ -185,16 +185,7 @@ namespace LivingCompanionsValley.Services
             if (_dummyFarmer != null)
             {
                 this.FacingDirection = direction;
-                _dummyFarmer.FacingDirection = direction;
-                _dummyFarmer.CurrentTool = tool;
-                
-                // Usamos el sistema de red nativo para simular el uso de la herramienta
-                // Esto hará que UpdateIfOtherPlayer despierte las animaciones perfectas
-                _dummyFarmer.lastClick = _dummyFarmer.GetToolLocation();
-                
-                // Usamos Reflection para invocar el método interno de red que inicia la animación
-                var performBegin = typeof(StardewValley.Farmer).GetMethod("performBeginUsingTool", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                performBegin?.Invoke(_dummyFarmer, null);
+                _dummyFarmer.SwingTool(tool, direction);
             }
         }
 
@@ -204,28 +195,7 @@ namespace LivingCompanionsValley.Services
 
             if (_dummyFarmer != null)
             {
-                // Sincronizamos la posición y dirección
-                _dummyFarmer.Position = this.Position;
-                _dummyFarmer.currentLocation = this.currentLocation;
-                _dummyFarmer.FacingDirection = this.FacingDirection;
-
-                if (this.isMoving())
-                {
-                    _dummyFarmer.setMovingInFacingDirection();
-                    _dummyFarmer.setRunning(true);
-                }
-                else
-                {
-                    _dummyFarmer.Halt();
-                }
-
-                // Avanzamos animaciones especiales (como las de las herramientas)
-                _dummyFarmer.FarmerSprite.checkForSingleAnimation(time);
-
-                // Llamamos a updateCommon directamente en lugar de UpdateIfOtherPlayer mediante reflection.
-                // updateCommon ejecuta toda la lógica de piernas, herramientas y partículas usando los controles locales.
-                var updateCommon = typeof(StardewValley.Farmer).GetMethod("updateCommon", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-                updateCommon?.Invoke(_dummyFarmer, new object[] { time, this.currentLocation });
+                _dummyFarmer.TickVisuals(time, this.isMoving(), this.FacingDirection, this.Position, this.currentLocation);
             }
 
             // Ejecutar el nuevo "Cerebro Vivo" basado en GOAP
@@ -244,7 +214,7 @@ namespace LivingCompanionsValley.Services
             this.setTileLocation(tile);
         }
 
-        private Farmer? _dummyFarmer;
+        private WorkerFakeFarmer? _dummyFarmer;
 
         // Evitar que el diálogo nativo rompa el flujo
         public override bool checkAction(Farmer who, GameLocation location)

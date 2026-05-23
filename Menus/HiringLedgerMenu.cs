@@ -14,7 +14,7 @@ namespace LivingCompanionsValley.Menus
     public class Applicant
     {
         public WorkerState State { get; set; }
-        public Farmer Dummy { get; set; }
+        public WorkerFakeFarmer Dummy { get; set; }
         public int HireCost { get; set; }
 
         public Applicant(WorkerState state, int hireCost)

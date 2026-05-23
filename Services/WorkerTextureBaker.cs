@@ -11,9 +11,9 @@ namespace LivingCompanionsValley.Services
         /// Crea una instancia "Dummy" de Farmer configurada con la apariencia del trabajador.
         /// Esta instancia solo existe en memoria y se utiliza para renderizar el sprite.
         /// </summary>
-        public static Farmer CreateDummyFarmer(WorkerState state)
+        public static WorkerFakeFarmer CreateDummyFarmer(WorkerState state)
         {
-            var dummy = new Farmer();
+            var dummy = new WorkerFakeFarmer();
             dummy.Name = state.Name;
 
             // Configurar Apariencia Procedural
