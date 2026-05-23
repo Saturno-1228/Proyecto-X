@@ -7,6 +7,8 @@ using StardewValley.Menus;
 using StardewValley.Tools;
 using StardewValley.Pathfinding;
 using LivingCompanionsValley.Models;
+using LivingCompanionsValley.Services.WorkBrain;
+using LivingCompanionsValley.Services.WorkBrain.Actions;
 
 namespace LivingCompanionsValley.Services
 {
@@ -20,6 +22,8 @@ namespace LivingCompanionsValley.Services
         public string CurrentTaskName { get; set; } = "Descansando";
         public WorkerRoutineState RoutineState { get; set; } = WorkerRoutineState.Sleeping;
 
+        private ILivingBrain _brain;
+
         public WorkerNPC(WorkerState state, Vector2 tilePos, string locationName) 
             : base()
         {
@@ -31,8 +35,11 @@ namespace LivingCompanionsValley.Services
             this.DefaultMap = locationName;
             this.FacingDirection = 2;
             
-            // Inicializar sprite nativo
-            this.Sprite = new AnimatedSprite("Characters\\Farmer", 0, 16, 32);
+            // Inicializar sprite nativo con textura válida para evitar ContentLoadException
+            this.Sprite = new AnimatedSprite("Characters\\Abigail", 0, 16, 32);
+            
+            // Instanciar al dummy farmer desde el inicio para poder animarlo de forma nativa
+            _dummyFarmer = WorkerTextureBaker.CreateDummyFarmer(state);
 
             this.Age = 1; // Adulto
             this.SocialAnxiety = 0;
@@ -41,6 +48,20 @@ namespace LivingCompanionsValley.Services
 
             // Cargar mochila
             LoadInventory();
+
+            // Implantar el Cerebro GOAP
+            var sensory = new SensorySystem();
+            var internalState = new InternalState();
+            var reaction = new ReactionSystem();
+            var planner = new GoapPlanner();
+            
+            planner.RegisterAction(new ActionWander(this));
+            planner.RegisterAction(new ActionClearDebris(this));
+            planner.RegisterAction(new ActionSleep(this, State.CabinName));
+            planner.RegisterAction(new ActionLeaveCabin(this, State.CabinName));
+
+            _brain = new LivingBrain(sensory, internalState, reaction, planner);
+            _brain.Initialize(this);
         }
 
         public void LoadInventory()
@@ -67,7 +88,10 @@ namespace LivingCompanionsValley.Services
             if (Inventory.Count == 0)
             {
                 Inventory.Add(ItemRegistry.Create("(T)Axe"));
+                Inventory.Add(ItemRegistry.Create("(T)Pickaxe"));
+                Inventory.Add(ItemRegistry.Create("(T)Hoe"));
                 Inventory.Add(ItemRegistry.Create("(T)WateringCan"));
+                Inventory.Add(ItemRegistry.Create("(W)47")); // Scythe (arma)
                 SaveInventory();
             }
         }
@@ -156,66 +180,56 @@ namespace LivingCompanionsValley.Services
             return false;
         }
 
+        public void PlayToolAnimation(Tool tool, int direction)
+        {
+            if (_dummyFarmer != null)
+            {
+                this.FacingDirection = direction;
+                _dummyFarmer.FacingDirection = direction;
+                _dummyFarmer.CurrentTool = tool;
+                
+                // Usamos el sistema de red nativo para simular el uso de la herramienta
+                // Esto hará que UpdateIfOtherPlayer despierte las animaciones perfectas
+                _dummyFarmer.lastClick = _dummyFarmer.GetToolLocation();
+                
+                // Usamos Reflection para invocar el método interno de red que inicia la animación
+                var performBegin = typeof(StardewValley.Farmer).GetMethod("performBeginUsingTool", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                performBegin?.Invoke(_dummyFarmer, null);
+            }
+        }
+
         public override void update(GameTime time, GameLocation location)
         {
             base.update(time, location);
 
-            ProcessRoutineStateMachine();
-
-            if (location is Farm farm && RoutineState == WorkerRoutineState.Wandering)
+            if (_dummyFarmer != null)
             {
-                TaskTicks++;
-                
-                // Simulación física interactiva si el jugador está en la Granja
-                if (Game1.currentLocation is Farm)
+                // Sincronizamos la posición y dirección
+                _dummyFarmer.Position = this.Position;
+                _dummyFarmer.currentLocation = this.currentLocation;
+                _dummyFarmer.FacingDirection = this.FacingDirection;
+
+                if (this.isMoving())
                 {
-                    if (TaskTicks % 120 == 0 && this.controller == null) // Cada 2 segundos
-                    {
-                        WanderRandomly(farm);
-                    }
+                    _dummyFarmer.setMovingInFacingDirection();
+                    _dummyFarmer.setRunning(true);
                 }
                 else
                 {
-                    // Simulación matemática eficiente fuera de pantalla (cada hora de juego, aprox. 50 segundos reales)
-                    if (TaskTicks % 3000 == 0) 
-                    {
-                        PerformOffScreenWork(farm);
-                    }
+                    _dummyFarmer.Halt();
                 }
-            }
-        }
 
-        private void ProcessRoutineStateMachine()
-        {
-            int timeOfDay = Game1.timeOfDay;
+                // Avanzamos animaciones especiales (como las de las herramientas)
+                _dummyFarmer.FarmerSprite.checkForSingleAnimation(time);
 
-            // 6:00 AM - Dejar la cabaña (Teletransporte inmediato a la puerta exterior)
-            if (timeOfDay >= 600 && timeOfDay < 700 && RoutineState == WorkerRoutineState.Sleeping)
-            {
-                RoutineState = WorkerRoutineState.LeavingCabin;
-                TeleportOutsideCabin();
+                // Llamamos a updateCommon directamente en lugar de UpdateIfOtherPlayer mediante reflection.
+                // updateCommon ejecuta toda la lógica de piernas, herramientas y partículas usando los controles locales.
+                var updateCommon = typeof(StardewValley.Farmer).GetMethod("updateCommon", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                updateCommon?.Invoke(_dummyFarmer, new object[] { time, this.currentLocation });
             }
-            // 7:00 AM - Empieza a trabajar/vagar
-            else if (timeOfDay >= 700 && timeOfDay < 2300 && (RoutineState == WorkerRoutineState.LeavingCabin || RoutineState == WorkerRoutineState.Sleeping))
-            {
-                RoutineState = WorkerRoutineState.Wandering;
-                if (this.currentLocation?.Name != "Farm") TeleportOutsideCabin(); 
-            }
-            // 11:00 PM - Regresar a la cabaña caminando
-            else if (timeOfDay >= 2300 && timeOfDay < 2400 && RoutineState == WorkerRoutineState.Wandering)
-            {
-                RoutineState = WorkerRoutineState.ReturningCabin;
-                PathfindToCabin();
-            }
-            // 12:00 AM (Medianoche) - Emergencia: Teletransportar a la cabaña si no ha llegado
-            else if (timeOfDay >= 2400 && RoutineState == WorkerRoutineState.ReturningCabin)
-            {
-                if (this.currentLocation?.Name != State.CabinName)
-                {
-                    RoutineState = WorkerRoutineState.Sleeping;
-                    TeleportInsideCabin();
-                }
-            }
+
+            // Ejecutar el nuevo "Cerebro Vivo" basado en GOAP
+            _brain?.UpdateTicked(time, location);
         }
 
         public void WarpTo(string locationName, Vector2 tile)
@@ -227,181 +241,7 @@ namespace LivingCompanionsValley.Services
                 newLoc.characters.Add(this);
                 this.currentLocation = newLoc;
             }
-            this.Position = tile * 64f;
-        }
-
-        private void TeleportOutsideCabin()
-        {
-            var farm = Game1.getFarm();
-            var cabin = farm.buildings.FirstOrDefault(b => b.indoors.Value?.Name == State.CabinName);
-            if (cabin != null)
-            {
-                WarpTo("Farm", new Vector2(cabin.tileX.Value + cabin.humanDoor.X, cabin.tileY.Value + cabin.humanDoor.Y + 1));
-            }
-            else
-            {
-                WarpTo("Farm", new Vector2(64, 15));
-            }
-            CurrentTaskName = "Yendo al trabajo";
-        }
-
-        private void PathfindToCabin()
-        {
-            CurrentTaskName = "Yendo a dormir";
-            var farm = Game1.getFarm();
-            var cabin = farm.buildings.FirstOrDefault(b => b.indoors.Value?.Name == State.CabinName);
-            
-            if (cabin != null && this.currentLocation == farm)
-            {
-                Point doorPoint = new Point(cabin.tileX.Value + cabin.humanDoor.X, cabin.tileY.Value + cabin.humanDoor.Y + 1);
-                this.controller = new PathFindController(this, farm, doorPoint, -1, (c, l) =>
-                {
-                    RoutineState = WorkerRoutineState.Sleeping;
-                    TeleportInsideCabin();
-                });
-            }
-            else
-            {
-                RoutineState = WorkerRoutineState.Sleeping;
-                TeleportInsideCabin();
-            }
-        }
-
-        public void TeleportInsideCabin()
-        {
-            // Coordenadas cercanas a la cama en una cabaña típica (o la entrada si no la encontramos)
-            WarpTo(State.CabinName, new Vector2(3, 4));
-            this.controller = null;
-            CurrentTaskName = "Durmiendo";
-        }
-
-        private void WanderRandomly(Farm farm)
-        {
-            Vector2? targetDebris = FindNearestDebris(farm);
-            if (targetDebris == null)
-            {
-                CurrentTaskName = "Descansando";
-                return;
-            }
-
-            Vector2 targetTile = targetDebris.Value;
-            Vector2? walkTile = FindAdjacentWalkableTile(farm, targetTile);
-
-            if (walkTile == null) return; // No hay lugar adyacente transitable
-
-            CurrentTaskName = "Limpiando terreno";
-            Point targetPoint = new Point((int)walkTile.Value.X, (int)walkTile.Value.Y);
-
-            this.controller = new PathFindController(this, farm, targetPoint, -1, (c, l) =>
-            {
-                ClearDebrisAt(farm, targetTile);
-            });
-        }
-
-        private void ClearDebrisAt(Farm farm, Vector2 target)
-        {
-            if (farm.objects.TryGetValue(target, out var obj) && CanClear(obj))
-            {
-                // Enfrentarse al objeto
-                this.faceGeneralDirection(target * 64f);
-                
-                // Remover y cosechar
-                farm.objects.Remove(target);
-
-                string harvestId = "(O)388"; // Madera
-                string name = "Madera";
-                
-                if (obj.IsWeeds())
-                {
-                    Game1.playSound("cut");
-                    harvestId = "(O)771"; // Fibra
-                    name = "Fibra";
-                }
-                else if (obj.Name.Contains("Stone") || obj.QualifiedItemId == "(O)343")
-                {
-                    Game1.playSound("hammer");
-                    harvestId = "(O)390"; // Piedra
-                    name = "Piedra";
-                }
-                else
-                {
-                    Game1.playSound("axchop");
-                }
-
-                Item harvested = ItemRegistry.Create(harvestId);
-                AddToInventory(harvested);
-                AddLog($"Limpié {obj.DisplayName} en la baldosa {target} y obtuve {name}.");
-            }
-            this.controller = null;
-        }
-
-        private void PerformOffScreenWork(Farm farm)
-        {
-            var debrisList = farm.objects.Pairs
-                .Where(kv => CanClear(kv.Value))
-                .ToList();
-
-            if (debrisList.Count > 0)
-            {
-                var rand = new Random();
-                var targetPair = debrisList[rand.Next(debrisList.Count)];
-                Vector2 tile = targetPair.Key;
-                var obj = targetPair.Value;
-
-                farm.objects.Remove(tile);
-
-                string harvestId = "(O)388";
-                string name = "Madera";
-                if (obj.IsWeeds()) { harvestId = "(O)771"; name = "Fibra"; }
-                else if (obj.Name.Contains("Stone") || obj.QualifiedItemId == "(O)343") { harvestId = "(O)390"; name = "Piedra"; }
-
-                Item harvested = ItemRegistry.Create(harvestId);
-                AddToInventory(harvested);
-                AddLog($"[Fuera de pantalla] Limpié {obj.DisplayName} en la baldosa {tile} y obtuve {name}.");
-
-                // Teletransportar físicamente al NPC a esta baldosa para inmersión
-                // Así cuando el jugador vuelva a la granja, el trabajador estará donde trabajó
-                this.Position = tile * 64f;
-            }
-        }
-
-        private Vector2? FindNearestDebris(Farm farm)
-        {
-            Vector2? nearest = null;
-            float nearestDist = float.MaxValue;
-
-            foreach (var pair in farm.objects.Pairs)
-            {
-                var obj = pair.Value;
-                if (CanClear(obj))
-                {
-                    float dist = Vector2.Distance(this.Tile, pair.Key);
-                    if (dist < nearestDist && dist < 15f) // Rango máximo de 15 baldosas de búsqueda
-                    {
-                        // Validar si es alcanzable por lo menos una baldosa adyacente
-                        if (FindAdjacentWalkableTile(farm, pair.Key) != null)
-                        {
-                            nearestDist = dist;
-                            nearest = pair.Key;
-                        }
-                    }
-                }
-            }
-            return nearest;
-        }
-
-        private Vector2? FindAdjacentWalkableTile(GameLocation location, Vector2 target)
-        {
-            Vector2[] offsets = { new Vector2(0, 1), new Vector2(0, -1), new Vector2(1, 0), new Vector2(-1, 0) };
-            foreach (var offset in offsets)
-            {
-                Vector2 adjacent = target + offset;
-                if (location.isTilePassable(adjacent))
-                {
-                    return adjacent;
-                }
-            }
-            return null;
+            this.setTileLocation(tile);
         }
 
         private Farmer? _dummyFarmer;
@@ -421,12 +261,9 @@ namespace LivingCompanionsValley.Services
                 _dummyFarmer = WorkerTextureBaker.CreateDummyFarmer(State);
             }
 
-            // Sincronizar estado completo
             _dummyFarmer.Position = this.Position;
-            _dummyFarmer.FacingDirection = this.FacingDirection;
+            _dummyFarmer.faceDirection(this.FacingDirection);
             _dummyFarmer.currentLocation = this.currentLocation;
-            _dummyFarmer.FarmerSprite.currentFrame = this.Sprite.currentFrame;
-            _dummyFarmer.Sprite.currentFrame = this.Sprite.currentFrame;
 
             _dummyFarmer.draw(b);
         }

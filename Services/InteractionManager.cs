@@ -91,12 +91,14 @@ namespace LivingCompanionsValley.Services
                 EnsureCacheLoaded();
                 var playerTile = Game1.player.Tile;
                 _activeNpc = Game1.player.currentLocation.characters
-                             .FirstOrDefault(n => Vector2.Distance(n.Tile, playerTile) <= 3f && (n.IsVillager || n is WorkerNPC));
+                             .Where(n => Vector2.Distance(n.Tile, playerTile) <= 3f && n.IsVillager)
+                             .OrderBy(n => Vector2.Distance(n.Tile, playerTile))
+                             .FirstOrDefault();
 
                 if (_activeNpc != null)
                 {
                     // Consulta RAM instantánea en lugar de File.Exists
-                    if (_activeNpc is WorkerNPC || _supportedNpcs.Contains(_activeNpc.Name))
+                    if (_supportedNpcs.Contains(_activeNpc.Name))
                     {
                         if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
                         {
@@ -319,7 +321,7 @@ namespace LivingCompanionsValley.Services
                 }
 
                 var npc = dialogueBox.characterDialogue.speaker;
-                if (npc != null && (_supportedNpcs.Contains(npc.Name) || npc is WorkerNPC))
+                if (npc != null && _supportedNpcs.Contains(npc.Name))
                 {
                     if (_isOfflineCooldownActive && DateTime.Now < _offlineCooldownExpiration)
                     {

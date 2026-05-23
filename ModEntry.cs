@@ -79,11 +79,11 @@ namespace LivingCompanionsValley
             // Buscar cabaña disponible (que no esté ya ocupada por otro trabajador)
             var availableCabin = farm.buildings
                 .FirstOrDefault(b => b.indoors.Value is Cabin && 
-                                     !_activeWorkers.Any(w => w.State.CabinName == b.indoors.Value.Name));
+                                     !_activeWorkers.Any(w => w.State.CabinName == b.indoors.Value.NameOrUniqueName));
             
             if (availableCabin != null && availableCabin.indoors.Value != null)
             {
-                state.CabinName = availableCabin.indoors.Value.Name;
+                state.CabinName = availableCabin.indoors.Value.NameOrUniqueName;
             }
 
             var worker = new WorkerNPC(state, new Vector2(3, 4), state.CabinName);
@@ -349,6 +349,20 @@ namespace LivingCompanionsValley
                 {
                     e.LoadFromModFile<Texture2D>(customPortraitPath, AssetLoadPriority.Medium);
                     Logger?.Log($"¡Retrato LCV de {npcName} inyectado con éxito!", LogLevel.Trace);
+                }
+                else if (_activeWorkers.Any(w => w.Name == npcName))
+                {
+                    // Prevenir crash por falta de retrato: Inyectar textura transparente en memoria
+                    e.LoadFrom(() => 
+                    {
+                        Texture2D dummyTexture = new Texture2D(Game1.graphics.GraphicsDevice, 64, 64);
+                        Color[] data = new Color[64 * 64];
+                        for (int i = 0; i < data.Length; i++) data[i] = Color.Transparent;
+                        dummyTexture.SetData(data);
+                        return dummyTexture;
+                    }, AssetLoadPriority.Medium);
+                    
+                    Logger?.Log($"Generado retrato transparente en memoria para el trabajador procedimental {npcName}.", LogLevel.Trace);
                 }
             }
             else if (e.NameWithoutLocale.IsEquivalentTo("Data/Furniture"))
