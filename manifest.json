@@ -1,10 +1,10 @@
 {
-  "Name": "Living Companions Valley",
-  "Author": "Studio Corvus",
-  "Version": "2.0.0",
-  "Description": "Renacimiento del motor de IA para NPCs de Stardew Valley. (Dual-Model Architecture)",
-  "UniqueID": "StudioCorvus.LivingCompanionsValley",
-  "EntryDll": "LivingCompanionsValley.dll",
+  "Name": "Stardew Living Valley",
+  "Author": "Trabajo",
+  "Version": "1.0.0",
+  "Description": "Mod de IA para Stardew Valley.",
+  "UniqueID": "Trabajo.StardewLivingValley",
+  "EntryDll": "StardewLivingValley.dll",
   "MinimumApiVersion": "4.0.0",
   "UpdateKeys": []
 }
