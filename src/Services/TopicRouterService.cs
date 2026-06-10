@@ -35,6 +35,7 @@ namespace StardewLivingValley.Services
         public string Role { get; set; } = string.Empty;
         public string Persona { get; set; } = string.Empty;
         public string Speech { get; set; } = string.Empty;
+        public string Ties { get; set; } = string.Empty;
         public string Boundaries { get; set; } = string.Empty;
         public List<string> ForbiddenClaims { get; set; } = new List<string>();
         
