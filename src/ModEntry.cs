@@ -34,8 +34,10 @@ namespace StardewLivingValley
             var topicRouter = new TopicRouterService(helper, this.Monitor);
             _emotionService = new EmotionService(helper, this.Monitor);
             var observationEngine = new ObservationEngine(this.Monitor, helper.DirectoryPath);
+            var actionController = new NPCActionController(this.Monitor, helper);
             
-            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine);
+            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine, actionController);
+            _interactionManager.RegisterReopenCallback(ReopenDialogue);
 
             helper.Events.Input.ButtonPressed += OnButtonPressed;
             helper.Events.Display.MenuChanged += OnMenuChanged;
@@ -121,6 +123,23 @@ namespace StardewLivingValley
             cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
             
             return string.IsNullOrWhiteSpace(cleaned) ? "Hola..." : cleaned;
+        }
+
+        public void ReopenDialogue(NPC npc, string initialMessage)
+        {
+            if (_activeNpc != null) return;
+
+            _activeNpc = npc;
+            _activeNpc.Halt();
+            _activeNpc.faceGeneralDirection(Game1.player.Position);
+            this.Helper.Reflection.GetField<bool>(_activeNpc, "freezeMotion").SetValue(true);
+
+            _activeMenu = new StardewLivingValley.UI.NPCDialogueMenu(_activeNpc, _emotionService!, OnMessageSubmitted);
+            Game1.activeClickableMenu = _activeMenu;
+            
+            _interactionManager?.StartInteraction(_activeNpc, _activeMenu, "");
+            _activeMenu.ReceiveAiResponse("...");
+            _interactionManager?.HandleChatAsync(initialMessage);
         }
     }
 }

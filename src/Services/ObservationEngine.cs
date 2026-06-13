@@ -145,7 +145,8 @@ namespace StardewLivingValley.Services
                 memory.LastFarmVisitDay = Game1.dayOfMonth;
                 memory.LastFarmVisitSeason = Game1.currentSeason;
                 
-                var animals = farm.getAllFarmAnimals();
+                // Solo animales al aire libre
+                var animals = farm.animals.Values.ToList();
                 memory.LastSeenAnimalCount = animals.Count;
                 memory.LastSeenAnimalTypes.Clear();
                 foreach (var a in animals)
@@ -195,6 +196,22 @@ namespace StardewLivingValley.Services
                     memory.LastSeenBuildingTypes.Add(b.buildingType.Value);
                 }
 
+                updated = true;
+            }
+            else if (Game1.currentLocation is StardewValley.AnimalHouse animalHouse)
+            {
+                memory.LastFarmVisitDay = Game1.dayOfMonth;
+                memory.LastFarmVisitSeason = Game1.currentSeason;
+                
+                // Solo animales dentro de este edificio
+                var animals = animalHouse.animals.Values.ToList();
+                memory.LastSeenAnimalCount = animals.Count;
+                memory.LastSeenAnimalTypes.Clear();
+                foreach (var a in animals)
+                {
+                    memory.LastSeenAnimalTypes.Add(a.type.Value);
+                }
+                
                 updated = true;
             }
             else if (Game1.currentLocation is StardewValley.Locations.FarmHouse house)

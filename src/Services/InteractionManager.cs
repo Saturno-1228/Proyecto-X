@@ -20,14 +20,21 @@ namespace StardewLivingValley.Services
         private readonly ContextBuilderService _contextBuilder;
         private readonly TopicRouterService _topicRouter;
         private readonly ObservationEngine _observationEngine;
+        private readonly NPCActionController _actionController;
 
         private CancellationTokenSource? _cts;
         private List<VeniceMessage> _sessionMessages = new List<VeniceMessage>();
         private Dictionary<string, (int Day, int Time)> _lastGiftTimeByNpc = new Dictionary<string, (int Day, int Time)>();
         private NPC? _activeNpc;
         private NPCDialogueMenu? _activeMenu;
+        private Action<NPC, string>? _reopenDialogueCallback;
 
-        public InteractionManager(IMonitor logger, VeniceApiService veniceApi, MemoryService memoryService, ContextBuilderService contextBuilder, TopicRouterService topicRouter, ObservationEngine observationEngine)
+        public void RegisterReopenCallback(Action<NPC, string> callback)
+        {
+            _reopenDialogueCallback = callback;
+        }
+
+        public InteractionManager(IMonitor logger, VeniceApiService veniceApi, MemoryService memoryService, ContextBuilderService contextBuilder, TopicRouterService topicRouter, ObservationEngine observationEngine, NPCActionController actionController)
         {
             _logger = logger;
             _veniceApi = veniceApi;
@@ -35,6 +42,7 @@ namespace StardewLivingValley.Services
             _contextBuilder = contextBuilder;
             _topicRouter = topicRouter;
             _observationEngine = observationEngine;
+            _actionController = actionController;
         }
 
         public void StartInteraction(NPC npc, NPCDialogueMenu menu, string initialDialogue)
@@ -226,6 +234,48 @@ namespace StardewLivingValley.Services
                     {
                         _logger.Log($"[{npcName}] intentó regalar '{itemName}' pero no está en su AllowedGifts.", LogLevel.Warn);
                     }
+                }
+
+                // Interceptar comando de movimiento
+                var goToMatch = Regex.Match(cleanResponse, @"\[go_to:(.*?)\]", RegexOptions.IgnoreCase);
+                if (goToMatch.Success)
+                {
+                    string targetLocation = goToMatch.Groups[1].Value.Trim();
+                    cleanResponse = cleanResponse.Replace(goToMatch.Value, "").Trim();
+                    
+                    _sessionMessages.Add(new VeniceMessage { Role = "user", Content = playerMessage });
+                    _sessionMessages.Add(new VeniceMessage { Role = "assistant", Content = cleanResponse });
+                    
+                    if (Game1.activeClickableMenu == _activeMenu)
+                    {
+                        Game1.exitActiveMenu();
+                    }
+
+                    NPC npcToInspect = _activeNpc;
+                    _actionController.StartInspection(npcToInspect, targetLocation, () => {
+                        _logger.Log($"[InteractionManager] Callback de inspección. NPC: {npcToInspect.Name}, Map NPC: {npcToInspect.currentLocation?.NameOrUniqueName}, Map Player: {Game1.player.currentLocation?.NameOrUniqueName}", LogLevel.Info);
+                        
+                        if (npcToInspect.currentLocation == null || Game1.player.currentLocation == null)
+                        {
+                            _logger.Log($"[InteractionManager] Error: Ubicación actual del NPC o del jugador es nula.", LogLevel.Error);
+                            return;
+                        }
+
+                        float distance = Vector2.Distance(Game1.player.Tile, npcToInspect.Tile);
+                        _logger.Log($"[InteractionManager] Distancia al jugador: {distance} tiles. Mismo mapa: {Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName}", LogLevel.Info);
+
+                        if (Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName && distance <= 10f)
+                        {
+                            _logger.Log($"[InteractionManager] Reabriendo diálogo con {npcToInspect.Name}.", LogLevel.Info);
+                            _reopenDialogueCallback?.Invoke(npcToInspect, "*Te observa esperando a que le cuentes lo que viste*");
+                        }
+                        else
+                        {
+                            _logger.Log($"[InteractionManager] No se reabre el diálogo. Distancia > 10 ({distance}) o mapas diferentes (Player: {Game1.player.currentLocation.NameOrUniqueName}, NPC: {npcToInspect.currentLocation.NameOrUniqueName}).", LogLevel.Warn);
+                        }
+                    });
+
+                    return;
                 }
 
                 // 6. Guardar en memoria de sesión

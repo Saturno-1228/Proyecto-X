@@ -13,22 +13,28 @@ if (Test-Path $configPath) {
     Write-Host "No config.json found to backup."
 }
 
-Write-Host "Cleaning old build..."
-if (Test-Path $targetDir) {
-    Remove-Item -Recurse -Force $targetDir
-    Write-Host "Old build deleted."
+try {
+    Write-Host "Cleaning old build..."
+    if (Test-Path $targetDir) {
+        Remove-Item -Recurse -Force $targetDir
+        Write-Host "Old build deleted."
+    }
+    
+    Write-Host "Running dotnet build..."
+    dotnet build
 }
-
-Write-Host "Running dotnet build..."
-dotnet build
-
-Write-Host "Restoring config.json..."
-if (Test-Path $tempConfigPath) {
-    Copy-Item $tempConfigPath -Destination $configPath -Force
-    Remove-Item $tempConfigPath -Force
-    Write-Host "Config restored to $configPath"
-} else {
-    Write-Host "No config.json to restore."
+finally {
+    Write-Host "Restoring config.json..."
+    if (Test-Path $tempConfigPath) {
+        if (!(Test-Path $targetDir)) {
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        }
+        Copy-Item $tempConfigPath -Destination $configPath -Force
+        Remove-Item $tempConfigPath -Force
+        Write-Host "Config restored to $configPath"
+    } else {
+        Write-Host "No config.json to restore."
+    }
 }
 
 Write-Host "Build and deploy complete!"

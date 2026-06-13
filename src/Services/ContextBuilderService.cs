@@ -61,6 +61,11 @@ namespace StardewLivingValley.Services
                 sb.AppendLine("]");
             }
 
+            sb.AppendLine("\n--- ACCIONES Y MOVIMIENTO ---");
+            sb.AppendLine("Si el usuario te pide revisar algo que no está a la vista (por ejemplo, ver a los animales dentro del gallinero, o revisar la casa), puedes ir físicamente a ese lugar usando el comando [go_to:NombreLugar] al inicio de tu respuesta.");
+            sb.AppendLine("Lugares válidos: [Farm, Coop, Barn, FarmHouse, Saloon].");
+            sb.AppendLine("Cuando uses este comando, te despedirás brevemente, irás a revisar de inmediato, y luego volverás para contarle lo que viste.");
+
             return sb.ToString();
         }
 
