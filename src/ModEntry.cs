@@ -19,6 +19,7 @@ namespace StardewLivingValley
         private NPC? _activeNpc;
         private NPCDialogueMenu? _activeMenu;
         private EmotionService? _emotionService;
+        private NPCActionController? _actionController;
 
         /// <summary>The mod entry point, called after the mod is first loaded.</summary>
         /// <param name="helper">Provides simplified APIs for writing mods.</param>
@@ -34,9 +35,10 @@ namespace StardewLivingValley
             var topicRouter = new TopicRouterService(helper, this.Monitor);
             _emotionService = new EmotionService(helper, this.Monitor);
             var observationEngine = new ObservationEngine(this.Monitor, helper.DirectoryPath);
-            var actionController = new NPCActionController(this.Monitor, helper);
+            _actionController = new NPCActionController(this.Monitor, helper);
+            _actionController.SetMemoryService(memoryService);
             
-            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine, actionController);
+            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine, _actionController);
             _interactionManager.RegisterReopenCallback(ReopenDialogue);
 
             helper.Events.Input.ButtonPressed += OnButtonPressed;
@@ -88,6 +90,14 @@ namespace StardewLivingValley
                 
                 if (speaker != null && speaker.IsVillager)
                 {
+                    if (_actionController != null && _actionController.IsNpcOnMission(speaker))
+                    {
+                        vanillaMenu.exitThisMenuNoSound();
+                        Game1.dialogueUp = false;
+                        speaker.showTextAboveHead("¡Dame un segundo, estoy yendo a revisar lo que me pediste!");
+                        return;
+                    }
+
                     string rawVanillaText = charDialogue?.getCurrentDialogue() ?? "";
                     string vanillaText = CleanVanillaDialogue(rawVanillaText);
 

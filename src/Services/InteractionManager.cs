@@ -159,6 +159,25 @@ namespace StardewLivingValley.Services
                     }
                 }
 
+                // Obtener datos de tiempo y agenda para el contexto
+                string timeConstraintRule = "";
+                if (_activeNpc.Schedule != null && _activeNpc.Schedule.Count > 0)
+                {
+                    int nextActivityTime = 2600;
+                    foreach (var key in _activeNpc.Schedule.Keys)
+                    {
+                        if (key > Game1.timeOfDay && key < nextActivityTime)
+                        {
+                            nextActivityTime = key;
+                        }
+                    }
+
+                    if (nextActivityTime < 2600)
+                    {
+                        timeConstraintRule = $"Tu próxima actividad programada es a las {nextActivityTime}. Calcula el tiempo mentalmente: si el jugador te pide ir a otro mapa ([go_to]), considera que te tomará varios minutos de juego ir y volver caminando. REGLA ESTRICTA: Si crees que ir a revisar el lugar hará que llegues tarde a tu actividad de las {nextActivityTime}, NO aceptes y dile al jugador que estás demasiado ocupado ahora mismo.";
+                    }
+                }
+
                 // 3. Obtener Estado del Mundo
                 var envState = new EnvironmentState
                 {
@@ -169,7 +188,8 @@ namespace StardewLivingValley.Services
                     HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno",
                     RelationshipStatus = relationshipStatus,
                     RelationshipRule = relationshipRule,
-                    IsGiftCooldownActive = isCooldownActive
+                    IsGiftCooldownActive = isCooldownActive,
+                    TimeConstraintRule = timeConstraintRule
                 };
 
                 // 4. Obtener Perfil del Jugador

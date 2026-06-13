@@ -6,6 +6,7 @@ namespace StardewLivingValley.Services
     public class MemoryService
     {
         private Dictionary<string, UserProfile> _userProfiles = new Dictionary<string, UserProfile>();
+        private Dictionary<string, List<string>> _pendingMemories = new Dictionary<string, List<string>>();
 
         public UserProfile GetUserProfile(string npcName)
         {
@@ -14,11 +15,26 @@ namespace StardewLivingValley.Services
             return _userProfiles[npcName];
         }
 
+        public void SavePlayerMemory(string npcName, string memory)
+        {
+            if (!_pendingMemories.ContainsKey(npcName))
+            {
+                _pendingMemories[npcName] = new List<string>();
+            }
+            _pendingMemories[npcName].Add(memory);
+        }
+
         public string[] GetActiveMemories(string npcName)
         {
-            // Para la Fase 2, mantenemos la memoria persistente vacía.
-            // Esto se llenará en la Fase 3 con el almacenamiento del juego.
-            return new string[0]; 
+            var memories = new List<string>();
+
+            if (_pendingMemories.ContainsKey(npcName))
+            {
+                memories.AddRange(_pendingMemories[npcName]);
+                _pendingMemories[npcName].Clear(); // Consumir las memorias pendientes
+            }
+
+            return memories.ToArray();
         }
     }
 }

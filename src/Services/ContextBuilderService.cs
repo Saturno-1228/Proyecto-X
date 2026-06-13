@@ -14,6 +14,7 @@ namespace StardewLivingValley.Services
         public string RelationshipStatus { get; set; } = "Desconocido";
         public string RelationshipRule { get; set; } = "";
         public bool IsGiftCooldownActive { get; set; } = false;
+        public string TimeConstraintRule { get; set; } = "";
     }
 
     public class ContextBuilderService
@@ -96,6 +97,12 @@ namespace StardewLivingValley.Services
                 sb.AppendLine("\n--- ALERTA DE COOLDOWN DE REGALOS ---");
                 sb.AppendLine("IMPORTANTE: Ya le has dado un regalo a este jugador muy recientemente. NO puedes darle nada más por ahora.");
                 sb.AppendLine("Si el jugador te pide algo, PROHIBIDO usar [give_item:*]. En su lugar, invéntate una excusa creíble basada en tu personalidad (ej. 'Ya no me quedan', 'Lo dejé en casa', 'Tal vez más tarde').");
+            }
+
+            if (!string.IsNullOrEmpty(envState.TimeConstraintRule))
+            {
+                sb.AppendLine("\n--- ALERTA DE TIEMPO Y AGENDA ---");
+                sb.AppendLine(envState.TimeConstraintRule);
             }
 
             sb.AppendLine("\n--- SOBRE EL JUGADOR ---");
