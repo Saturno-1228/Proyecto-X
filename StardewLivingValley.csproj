@@ -11,4 +11,10 @@
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Assets\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -1,4 +1,4 @@
-﻿{
+{
     "Role":  "A creative resident who works at the Stardrop Saloon.",
     "Persona":  "Open-hearted and expressive, spiritually inclined and empathetic.",
     "Speech":  "Warm and imaginative, often positive and encouraging in tone.",
@@ -10,5 +10,11 @@
                         ],
     "DynamicLore":  [
 
-                    ]
+                    ],
+    "AllowedGifts": {
+        "Huevo frito": "(O)194",
+        "Tortilla": "(O)195",
+        "Ensalada": "(O)196",
+        "Café": "(O)395"
+    }
 }

@@ -6,6 +6,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewValley;
 using StardewValley.Menus;
 using StardewModdingAPI;
+using StardewLivingValley.Services;
 
 namespace StardewLivingValley.UI
 {
@@ -16,6 +17,7 @@ namespace StardewLivingValley.UI
     public class NPCDialogueMenu : IClickableMenu
     {
         private NPC _npc;
+        private EmotionService _emotionService;
         private TextBox _textBox; // Oculto: usado solo para capturar teclado nativo
         private Action<string> _onSubmit;
         private string _aiResponseText = "";
@@ -29,9 +31,11 @@ namespace StardewLivingValley.UI
         private const double TypewriterSpeedMs = 35.0; // 15% más lento que antes (30.0 -> 35.0)
         private double _autoPageDelayTimer = 0;
 
-        // --- Variables de Paginación y Emociones Dinámicas ---
-        private List<string> _pages = new List<string>();
-        private int _currentPageIndex = 0;
+        // --- Variables de Paginación e Historial ---
+        private List<string> _historyPages = new List<string>();
+        private List<int> _historyEmotions = new List<int>();
+        private int _historyIndex = 0;
+        private int _maxHistoryIndexReached = 0;
         private Dictionary<int, int> _emotionKeyframes = new Dictionary<int, int>();
         private int _globalTextIndex = 0;
 
@@ -45,10 +49,11 @@ namespace StardewLivingValley.UI
         private int _chatBoxWidth;
         private int _chatBoxHeight;
 
-        public NPCDialogueMenu(NPC npc, Action<string> onSubmit)
+        public NPCDialogueMenu(NPC npc, EmotionService emotionService, Action<string> onSubmit)
             : base(0, 0, 1200, 384) // Tamaños base del DialogueBox nativo
         {
             _npc = npc;
+            _emotionService = emotionService;
             _onSubmit = onSubmit;
 
             CalculateLayout();
@@ -111,18 +116,17 @@ namespace StardewLivingValley.UI
         public void ReceiveAiResponse(string rawResponse)
         {
             _isThinking = false;
-            ProcessAiText(rawResponse);
+            ProcessAiText(rawResponse.Trim());
             _textBox.Selected = true; 
         }
 
         private void ProcessAiText(string rawText)
         {
             _emotionKeyframes.Clear();
-            _pages.Clear();
-            _currentPageIndex = 0;
             _typewriterIndex = 0;
             _globalTextIndex = 0;
-            CurrentEmotion = 0;
+
+            int startIndex = _historyPages.Count;
 
             string cleanText = "";
             int cleanIndex = 0;
@@ -163,17 +167,28 @@ namespace StardewLivingValley.UI
             {
                 if (lineCount >= 4) // Límite de 4 líneas por caja de diálogo (Página)
                 {
-                    _pages.Add(currentPage.TrimEnd());
+                    _historyPages.Add(currentPage.TrimEnd());
+                    _historyEmotions.Add(CurrentEmotion);
                     currentPage = "";
                     lineCount = 0;
                 }
                 currentPage += line + "\n";
                 lineCount++;
             }
-            if (!string.IsNullOrWhiteSpace(currentPage)) _pages.Add(currentPage.TrimEnd());
-            if (_pages.Count == 0) _pages.Add("...");
+            if (!string.IsNullOrWhiteSpace(currentPage))
+            {
+                _historyPages.Add(currentPage.TrimEnd());
+                _historyEmotions.Add(CurrentEmotion);
+            }
+            if (_historyPages.Count == startIndex)
+            {
+                _historyPages.Add("...");
+                _historyEmotions.Add(CurrentEmotion);
+            }
             
-            _aiResponseText = _pages[0];
+            _historyIndex = startIndex;
+            _maxHistoryIndexReached = startIndex;
+            _aiResponseText = _historyPages[_historyIndex];
         }
 
         public override void receiveKeyPress(Keys key)
@@ -187,12 +202,40 @@ namespace StardewLivingValley.UI
         public override void receiveScrollWheelAction(int direction)
         {
             base.receiveScrollWheelAction(direction);
-            if (_wrappedLines.Count > _maxVisibleLines)
+            
+            // Si el mouse está en el chat box (input del jugador)
+            if (new Rectangle(_chatBoxX, _chatBoxBaseY - _chatBoxHeight, _chatBoxWidth, _chatBoxHeight).Contains(Game1.getMouseX(), Game1.getMouseY()))
             {
-                if (direction > 0)
-                    _currentScrollIndex = Math.Max(0, _currentScrollIndex - 1);
-                else if (direction < 0)
-                    _currentScrollIndex = Math.Min(_wrappedLines.Count - _maxVisibleLines, _currentScrollIndex + 1);
+                if (_wrappedLines.Count > _maxVisibleLines)
+                {
+                    if (direction > 0)
+                        _currentScrollIndex = Math.Max(0, _currentScrollIndex - 1);
+                    else if (direction < 0)
+                        _currentScrollIndex = Math.Min(_wrappedLines.Count - _maxVisibleLines, _currentScrollIndex + 1);
+                }
+            }
+            // Si el mouse está en la caja de diálogo superior
+            else if (new Rectangle(this.xPositionOnScreen, this.yPositionOnScreen, this.width, this.height).Contains(Game1.getMouseX(), Game1.getMouseY()))
+            {
+                if (!_isThinking && _historyPages.Count > 0)
+                {
+                    if (direction > 0 && _historyIndex > 0) // Scroll Up (Retroceder)
+                    {
+                        _historyIndex--;
+                        _aiResponseText = _historyPages[_historyIndex];
+                        _typewriterIndex = _aiResponseText.Length;
+                        CurrentEmotion = _historyEmotions[_historyIndex];
+                        Game1.playSound("shwip");
+                    }
+                    else if (direction < 0 && _historyIndex < _maxHistoryIndexReached) // Scroll Down (Avanzar por historial)
+                    {
+                        _historyIndex++;
+                        _aiResponseText = _historyPages[_historyIndex];
+                        _typewriterIndex = _aiResponseText.Length;
+                        CurrentEmotion = _historyEmotions[_historyIndex];
+                        Game1.playSound("shwip");
+                    }
+                }
             }
         }
 
@@ -211,7 +254,7 @@ namespace StardewLivingValley.UI
                     _currentScrollIndex = 0;
             }
 
-            if (!_isThinking && _pages.Count > 0 && _currentPageIndex < _pages.Count)
+            if (!_isThinking && _historyPages.Count > 0 && _historyIndex < _historyPages.Count)
             {
                 if (_typewriterIndex < _aiResponseText.Length)
                 {
@@ -225,22 +268,11 @@ namespace StardewLivingValley.UI
                         if (_emotionKeyframes.ContainsKey(_globalTextIndex))
                         {
                             CurrentEmotion = _emotionKeyframes[_globalTextIndex];
+                            _historyEmotions[_historyIndex] = CurrentEmotion;
                         }
 
                         if (_typewriterIndex % 3 == 0) 
                             Game1.playSound("dialogueCharacter");
-                    }
-                }
-                else if (_currentPageIndex < _pages.Count - 1)
-                {
-                    // Auto-avance de página automático tras finalizar el texto
-                    _autoPageDelayTimer += time.ElapsedGameTime.TotalMilliseconds;
-                    if (_autoPageDelayTimer >= 1800.0) // 1.8 segundos para leer la página antes de saltar
-                    {
-                        _currentPageIndex++;
-                        _aiResponseText = _pages[_currentPageIndex];
-                        _typewriterIndex = 0;
-                        _autoPageDelayTimer = 0;
                     }
                 }
             }
@@ -298,7 +330,8 @@ namespace StardewLivingValley.UI
                 Texture2D textureToDraw = _npc.Portrait;
                 
                 int frameSize = textureToDraw.Width <= 128 ? 64 : textureToDraw.Width / 2;
-                Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, this.CurrentEmotion, frameSize, frameSize);
+                int actualFrame = _emotionService != null ? _emotionService.GetFrameForEmotion(_npc.Name, this.CurrentEmotion) : this.CurrentEmotion;
+                Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, actualFrame, frameSize, frameSize);
                 
                 // --- PROTECCIÓN MATEMÁTICA CONTRA PANTALLAS ROSAS ---
                 // Si la IA pide una emoción (como la 5) y la imagen no es lo suficientemente grande,
@@ -312,7 +345,7 @@ namespace StardewLivingValley.UI
 
                 // Dibujo exacto del Retrato 
                 b.Draw(textureToDraw, 
-                    new Vector2(portraitBoxX + 104, this.yPositionOnScreen + 48), // Offset para centrar en el Portrait Plate
+                    new Vector2(portraitBoxX + 104, this.yPositionOnScreen + 42), // Offset ligeramente subido
                     new Rectangle?(sourceRect), 
                     Color.White, 0f, Vector2.Zero, portraitScale, SpriteEffects.None, 0.88f);
                 
@@ -453,22 +486,65 @@ namespace StardewLivingValley.UI
             base.receiveLeftClick(x, y, playSound);
             _textBox.Selected = true; 
             
-            if (!_isThinking && _pages.Count > 0)
+            // Si hacen click dentro del area de la caja de diálogo superior
+            if (new Rectangle(this.xPositionOnScreen, this.yPositionOnScreen, this.width, this.height).Contains(x, y))
             {
-                if (_typewriterIndex < _aiResponseText.Length)
+                if (!_isThinking && _historyPages.Count > 0)
                 {
-                    // Clic para saltar el efecto de máquina de escribir (Autocompletar la página actual)
-                    int remaining = _aiResponseText.Length - _typewriterIndex;
-                    
-                    // Procesar instantáneamente todas las emociones que estaban pendientes en esta página
-                    for (int i = 0; i <= remaining; i++)
+                    // Mitad izquierda para retroceder
+                    if (x < this.xPositionOnScreen + this.width / 2 && _historyIndex > 0)
                     {
-                        if (_emotionKeyframes.ContainsKey(_globalTextIndex + i))
-                            CurrentEmotion = _emotionKeyframes[_globalTextIndex + i];
+                        _historyIndex--;
+                        _aiResponseText = _historyPages[_historyIndex];
+                        _typewriterIndex = _aiResponseText.Length;
+                        CurrentEmotion = _historyEmotions[_historyIndex];
+                        Game1.playSound("smallSelect");
+                        return;
                     }
-                    
-                    _globalTextIndex += remaining;
-                    _typewriterIndex = _aiResponseText.Length;
+
+                    // Mitad derecha (o si no se pudo retroceder) para avanzar/autocompletar
+                    if (_historyIndex < _historyPages.Count)
+                    {
+                        if (_typewriterIndex < _aiResponseText.Length)
+                        {
+                            // Autocompletar la página actual
+                            int remaining = _aiResponseText.Length - _typewriterIndex;
+                            for (int i = 0; i <= remaining; i++)
+                            {
+                                if (_emotionKeyframes.ContainsKey(_globalTextIndex + i))
+                                    CurrentEmotion = _emotionKeyframes[_globalTextIndex + i];
+                            }
+                            
+                            _globalTextIndex += remaining;
+                            _typewriterIndex = _aiResponseText.Length;
+                            _historyEmotions[_historyIndex] = CurrentEmotion;
+                            Game1.playSound("dialogueCharacter");
+                        }
+                        else if (_historyIndex < _historyPages.Count - 1)
+                        {
+                            // Siguiente página
+                            _historyIndex++;
+                            _aiResponseText = _historyPages[_historyIndex];
+                            
+                            if (_historyIndex > _maxHistoryIndexReached)
+                            {
+                                _maxHistoryIndexReached = _historyIndex;
+                                _typewriterIndex = 0; // Si es nueva, efecto de máquina
+                            }
+                            else
+                            {
+                                _typewriterIndex = _aiResponseText.Length; // Si es historia, mostrar completo
+                                CurrentEmotion = _historyEmotions[_historyIndex];
+                            }
+                            Game1.playSound("smallSelect");
+                        }
+                        else
+                        {
+                            // Cerrar menú si ya no hay más páginas (como en Vanilla)
+                            Game1.exitActiveMenu();
+                            Game1.playSound("dialogueCharacterClose");
+                        }
+                    }
                 }
             }
         }

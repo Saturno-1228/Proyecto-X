@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
@@ -17,6 +18,7 @@ namespace StardewLivingValley
         private InteractionManager? _interactionManager;
         private NPC? _activeNpc;
         private NPCDialogueMenu? _activeMenu;
+        private EmotionService? _emotionService;
 
         /// <summary>The mod entry point, called after the mod is first loaded.</summary>
         /// <param name="helper">Provides simplified APIs for writing mods.</param>
@@ -30,8 +32,10 @@ namespace StardewLivingValley
             var memoryService = new MemoryService();
             var contextBuilder = new ContextBuilderService();
             var topicRouter = new TopicRouterService(helper, this.Monitor);
+            _emotionService = new EmotionService(helper, this.Monitor);
+            var observationEngine = new ObservationEngine(this.Monitor, helper.DirectoryPath);
             
-            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter);
+            _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine);
 
             helper.Events.Input.ButtonPressed += OnButtonPressed;
             helper.Events.Display.MenuChanged += OnMenuChanged;
@@ -44,27 +48,15 @@ namespace StardewLivingValley
             if (e.Button == SButton.Tab && Game1.activeClickableMenu == null && Context.IsPlayerFree)
             {
                 var playerTile = Game1.player.Tile;
-                _activeNpc = Game1.player.currentLocation.characters
+                var closestNpc = Game1.player.currentLocation.characters
                              .Where(n => Vector2.Distance(n.Tile, playerTile) <= 3f && n.IsVillager)
                              .OrderBy(n => Vector2.Distance(n.Tile, playerTile))
                              .FirstOrDefault();
 
-                if (_activeNpc != null)
+                if (closestNpc != null)
                 {
-                    // Congelación Temporal Segura
-                    if (_activeNpc.CurrentDialogue.Count == 0 && _activeNpc.movementPause <= 0)
-                    {
-                        _activeNpc.Halt();
-                        _activeNpc.faceGeneralDirection(Game1.player.Position);
-                        this.Helper.Reflection.GetField<bool>(_activeNpc, "freezeMotion").SetValue(true);
-                    }
-
-                    _activeMenu = new NPCDialogueMenu(_activeNpc, OnMessageSubmitted);
-                    Game1.activeClickableMenu = _activeMenu;
-                    
-                    _interactionManager.StartInteraction(_activeNpc, _activeMenu);
-                    
-                    _activeMenu.ReceiveAiResponse("Hola... [1]");
+                    // Simular clic derecho original
+                    closestNpc.checkAction(Game1.player, Game1.player.currentLocation);
                 }
             }
         }
@@ -76,13 +68,59 @@ namespace StardewLivingValley
 
         private void OnMenuChanged(object? sender, MenuChangedEventArgs e)
         {
-            if (e.OldMenu is NPCDialogueMenu && e.NewMenu == null && _activeNpc != null)
+            // Cierre de nuestro menú
+            if (e.OldMenu is StardewLivingValley.UI.NPCDialogueMenu && e.NewMenu == null && _activeNpc != null)
             {
                 this.Helper.Reflection.GetField<bool>(_activeNpc, "freezeMotion").SetValue(false);
                 _interactionManager?.EndInteraction();
                 _activeNpc = null;
                 _activeMenu = null;
+                return;
             }
+
+            // Intercepción del menú Vanilla (Se activa al hacer clic derecho en el NPC)
+            if (e.NewMenu is StardewValley.Menus.DialogueBox vanillaMenu && _activeNpc == null)
+            {
+                var charDialogue = this.Helper.Reflection.GetField<Dialogue>(vanillaMenu, "characterDialogue", false)?.GetValue();
+                NPC speaker = charDialogue?.speaker;
+                
+                if (speaker != null && speaker.IsVillager)
+                {
+                    string rawVanillaText = charDialogue?.getCurrentDialogue() ?? "";
+                    string vanillaText = CleanVanillaDialogue(rawVanillaText);
+
+                    vanillaMenu.exitThisMenuNoSound();
+                    Game1.dialogueUp = false; // EVITA EL CRASH DE STACK EMPTY
+
+                    _activeNpc = speaker;
+                    _activeNpc.Halt();
+                    _activeNpc.faceGeneralDirection(Game1.player.Position);
+                    this.Helper.Reflection.GetField<bool>(_activeNpc, "freezeMotion").SetValue(true);
+
+                    _activeMenu = new StardewLivingValley.UI.NPCDialogueMenu(_activeNpc, _emotionService!, OnMessageSubmitted);
+                    Game1.activeClickableMenu = _activeMenu;
+                    
+                    _interactionManager?.StartInteraction(_activeNpc, _activeMenu, vanillaText);
+                    _activeMenu.ReceiveAiResponse(vanillaText);
+                }
+            }
+        }
+
+        private string CleanVanillaDialogue(string rawText)
+        {
+            if (string.IsNullOrWhiteSpace(rawText)) return "";
+            
+            // Eliminar tokens de formato de Stardew Valley (ej. $h, $q, #$b#)
+            string cleaned = Regex.Replace(rawText, @"\$[a-zA-Z][^# ]*", ""); // comandos $
+            cleaned = Regex.Replace(cleaned, @"#\$b#", " "); // saltos de diálogo
+            cleaned = Regex.Replace(cleaned, @"#", " ");
+            cleaned = Regex.Replace(cleaned, @"%\w+", ""); // variables como %kid1
+            cleaned = Regex.Replace(cleaned, @"\[\d+\]", ""); // tags embebidos
+            
+            // Limpiar espacios múltiples y recortes
+            cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
+            
+            return string.IsNullOrWhiteSpace(cleaned) ? "Hola..." : cleaned;
         }
     }
 }

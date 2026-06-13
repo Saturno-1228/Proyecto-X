@@ -100,7 +100,7 @@ namespace StardewLivingValley.Services
             {
                 Model = modelName,
                 PromptCacheKey = cacheKey,
-                MaxTokens = 800, // Aumentado para evitar truncamientos
+                MaxTokens = 2000, // Aumentado para soportar reasoning_content sin truncar
                 Temperature = 0.7,
                 VeniceParameters = new VeniceParameters { IncludeVeniceSystemPrompt = false },
                 Reasoning = new ReasoningConfig { Effort = "low" }
@@ -126,7 +126,10 @@ namespace StardewLivingValley.Services
 
             try
             {
-                var jsonContent = new StringContent(JsonSerializer.Serialize(requestPayload), Encoding.UTF8, "application/json");
+                string requestJson = JsonSerializer.Serialize(requestPayload, new JsonSerializerOptions { WriteIndented = true });
+                _logger.Log($"[Venice API Enviando Peticion]\n{requestJson}", LogLevel.Info);
+
+                var jsonContent = new StringContent(requestJson, Encoding.UTF8, "application/json");
                 var response = await _httpClient.PostAsync(ApiUrl, jsonContent, cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -137,6 +140,9 @@ namespace StardewLivingValley.Services
                 }
 
                 var responseString = await response.Content.ReadAsStringAsync(cancellationToken);
+                
+                _logger.Log($"[Venice API Respuesta Recibida]\n{responseString}", LogLevel.Info);
+
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 var root = doc.RootElement;
                 

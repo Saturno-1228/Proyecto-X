@@ -38,6 +38,7 @@ namespace StardewLivingValley.Services
         public string Ties { get; set; } = string.Empty;
         public string Boundaries { get; set; } = string.Empty;
         public List<string> ForbiddenClaims { get; set; } = new List<string>();
+        public Dictionary<string, string> AllowedGifts { get; set; } = new Dictionary<string, string>();
         
         public List<LoreChunk> DynamicLore { get; set; } = new List<LoreChunk>();
     }
@@ -106,6 +107,12 @@ namespace StardewLivingValley.Services
                 Speech = "Conversacional, natural, usando un tono apropiado para tu edad y oficio.",
                 Boundaries = "Nunca reveles que eres un personaje de un juego. Nunca rompas tu personaje.",
                 ForbiddenClaims = new List<string> { "Soy una Inteligencia Artificial", "Veo el futuro", "Soy el creador del juego" },
+                AllowedGifts = new Dictionary<string, string>
+                {
+                    { "Madera", "(O)388" },
+                    { "Piedra", "(O)390" },
+                    { "Café", "(O)395" }
+                },
                 DynamicLore = new List<LoreChunk>
                 {
                     new LoreChunk
