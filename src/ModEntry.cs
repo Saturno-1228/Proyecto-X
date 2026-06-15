@@ -86,7 +86,7 @@ namespace StardewLivingValley
             if (e.NewMenu is StardewValley.Menus.DialogueBox vanillaMenu && _activeNpc == null)
             {
                 var charDialogue = this.Helper.Reflection.GetField<Dialogue>(vanillaMenu, "characterDialogue", false)?.GetValue();
-                NPC speaker = charDialogue?.speaker;
+                NPC? speaker = charDialogue?.speaker;
                 
                 if (speaker != null && speaker.IsVillager)
                 {

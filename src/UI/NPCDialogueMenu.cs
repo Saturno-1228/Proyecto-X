@@ -29,7 +29,7 @@ namespace StardewLivingValley.UI
         private int _typewriterIndex = 0;
         private double _typewriterTimer = 0;
         private const double TypewriterSpeedMs = 35.0; // 15% más lento que antes (30.0 -> 35.0)
-        private double _autoPageDelayTimer = 0;
+        // private double _autoPageDelayTimer = 0;
 
         // --- Variables de Paginación e Historial ---
         private List<string> _historyPages = new List<string>();

@@ -235,7 +235,7 @@ namespace StardewLivingValley.Services
                     string itemName = giveItemMatch.Groups[1].Value.Trim();
                     cleanResponse = cleanResponse.Replace(giveItemMatch.Value, "").Trim();
                     
-                    if (profile != null && profile.AllowedGifts != null && profile.AllowedGifts.TryGetValue(itemName, out string itemId))
+                    if (profile != null && profile.AllowedGifts != null && profile.AllowedGifts.TryGetValue(itemName, out string? itemId))
                     {
                         if (!isCooldownActive)
                         {

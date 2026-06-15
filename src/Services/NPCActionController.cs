@@ -153,7 +153,7 @@ namespace StardewLivingValley.Services
                            {
                                _currentState = ActionState.WalkingBack;
                                StoreAbandonmentMemoryBlocked();
-                               if (!TryStartNativeRouting(_activeNpc, _originalPlayerMap, true))
+                               if (!TryStartNativeRouting(npc, _originalPlayerMap, true))
                                {
                                    StoreAbandonmentMemory();
                                    FinishAction();
@@ -190,7 +190,7 @@ namespace StardewLivingValley.Services
                       _logger.Log($"[ActionController] No se encontró ruta nativa hacia {targetMap} desde {npc.currentLocation.NameOrUniqueName}. Usando fallback...", LogLevel.Warn);
                       
                       // Fallback 1: Buscar warp directo
-                      Warp directWarp = null;
+                      Warp? directWarp = null;
                       foreach (var w in npc.currentLocation.warps) {
                            if (w.TargetName == targetMap) { directWarp = w; break; }
                       }
