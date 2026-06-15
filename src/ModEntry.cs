@@ -158,7 +158,8 @@ namespace StardewLivingValley
             
             // Pasar el reporte de inspección como contexto del sistema para la IA
             _interactionManager?.StartInteraction(_activeNpc, _activeMenu, "");
-            _activeMenu.ReceiveAiResponse("...");
+            // NO mostramos "..." — el menú se queda en estado "pensando" hasta que la API responda
+            // Esto evita que el usuario escriba algo que cancele la primera llamada API
             
             // Enviar el reporte como mensaje del "sistema" para que la IA responda basándose en datos reales
             string contextMessage = $"[SISTEMA: Acabas de regresar de una misión de inspección. {initialMessage} Ahora cuéntale al jugador lo que encontraste de forma natural y breve, usando tu personalidad.]";

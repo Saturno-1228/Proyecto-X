@@ -182,6 +182,14 @@ namespace StardewLivingValley.Services
                 return false;
             }
 
+            // Proteger objetos colocados por el jugador (aspersores, máquinas, etc.)
+            // Sin esto, el NPC caminará sobre ellos y los destruirá.
+            Vector2 tileVec = new Vector2(tile.X, tile.Y);
+            if (location.objects.ContainsKey(tileVec))
+            {
+                return false;
+            }
+
             // Caja de colisión para objetos físicos (vallas, árboles, cofres, edificios)
             // Se usa un rectángulo ligeramente más pequeño (48x48) para evitar fricciones innecesarias en bordes.
             Rectangle boundingBox = new Rectangle(tile.X * Game1.tileSize + 8, tile.Y * Game1.tileSize + 8, 48, 48);
