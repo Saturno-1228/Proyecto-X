@@ -27,6 +27,7 @@ namespace StardewLivingValley.Services
         private NPC? _activeNpc;
         private string _targetLocationName = "";
         private Action? _onCompleteCallback;
+        private Action? _pendingRouting;
         private MemoryService? _memoryService;
         
         private string _originalPlayerMap = "";
@@ -204,7 +205,7 @@ namespace StardewLivingValley.Services
                                     finalFacingDirection = 2,
                                     endBehaviorFunction = (c, l) => {
                                          Game1.warpCharacter(npc, targetMap, new Vector2(directWarp.TargetX, directWarp.TargetY));
-                                         TryStartNativeRouting(npc, targetName, isReturning);
+                                         _pendingRouting = () => TryStartNativeRouting(npc, targetName, isReturning);
                                     }
                                };
                                return true;
@@ -269,6 +270,13 @@ namespace StardewLivingValley.Services
 
         private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
         {
+            if (_pendingRouting != null)
+            {
+                var routing = _pendingRouting;
+                _pendingRouting = null;
+                routing();
+            }
+
             if (_currentState == ActionState.Idle || _activeNpc == null) return;
 
             switch (_currentState)
