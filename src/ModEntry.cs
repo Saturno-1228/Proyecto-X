@@ -94,7 +94,15 @@ namespace StardewLivingValley
                     {
                         vanillaMenu.exitThisMenuNoSound();
                         Game1.dialogueUp = false;
-                        speaker.showTextAboveHead("¡Dame un segundo, estoy yendo a revisar lo que me pediste!");
+
+                        string[] busyDialogues = {
+                            "¡Dame un segundo, estoy yendo a revisar lo que me pediste!",
+                            "¡Tengo prisa, voy para allá!",
+                            "¡Ahora no puedo hablar, voy retrasado!",
+                            "¡Dame un momento, estoy ocupado con lo que me pediste!"
+                        };
+                        string randomBusyDialogue = busyDialogues[Game1.random.Next(busyDialogues.Length)];
+                        speaker.showTextAboveHead(randomBusyDialogue);
                         return;
                     }
 

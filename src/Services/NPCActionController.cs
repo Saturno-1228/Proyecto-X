@@ -11,16 +11,14 @@ namespace StardewLivingValley.Services
     public class NPCActionController
     {
         private readonly IMonitor _logger;
+        private readonly IModHelper _helper;
         
         private enum ActionState
         {
             Idle,
-            CalculatingRouteToTarget,
-            WalkingToWarp,
-            WarpingToNextMap,
+            WalkingToTarget,
             Inspecting,
-            CalculatingRouteBack,
-            WalkingToPlayer,
+            WalkingBack,
             Finished
         }
 
@@ -30,56 +28,20 @@ namespace StardewLivingValley.Services
         private Action? _onCompleteCallback;
         private MemoryService? _memoryService;
         
-        // Routing
-        private MapRoute? _currentRoute;
-        private int _routeIndex = 0;
-        private bool _isReturning = false;
-
+        private string _originalPlayerMap = "";
+        private Point _originalPlayerTile;
         private double _stateTimer = 0;
 
         public NPCActionController(IMonitor logger, IModHelper helper)
         {
             _logger = logger;
+            _helper = helper;
             helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         }
 
         public void SetMemoryService(MemoryService memoryService)
         {
             _memoryService = memoryService;
-        }
-
-        private GameLocation? ResolveLocation(string name)
-        {
-            var loc = Game1.getLocationFromName(name);
-            if (loc != null) return loc;
-
-            var farm = Game1.getLocationFromName("Farm");
-            if (farm != null)
-            {
-                foreach (var building in farm.buildings)
-                {
-                    if (building.indoors.Value != null)
-                    {
-                        if (name.Equals("Coop", StringComparison.OrdinalIgnoreCase) && 
-                            building.buildingType.Value.Contains("Coop", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return building.indoors.Value;
-                        }
-                        if (name.Equals("Barn", StringComparison.OrdinalIgnoreCase) && 
-                            building.buildingType.Value.Contains("Barn", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return building.indoors.Value;
-                        }
-                        if (building.indoors.Value.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || 
-                            building.indoors.Value.NameOrUniqueName.Equals(name, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return building.indoors.Value;
-                        }
-                    }
-                }
-            }
-
-            return null;
         }
 
         public void StartInspection(NPC npc, string targetLocation, Action onComplete)
@@ -93,17 +55,149 @@ namespace StardewLivingValley.Services
             _activeNpc = npc;
             _targetLocationName = targetLocation;
             _onCompleteCallback = onComplete;
-            _isReturning = false;
 
-            _currentState = ActionState.CalculatingRouteToTarget;
+            _originalPlayerMap = Game1.player.currentLocation.NameOrUniqueName;
+            _originalPlayerTile = Game1.player.TilePoint;
+
+            _currentState = ActionState.WalkingToTarget;
             _stateTimer = 0;
             
             _logger.Log($"[ActionController] {npc.Name} inicia inspección hacia {_targetLocationName}. Origen: {npc.currentLocation.NameOrUniqueName}", LogLevel.Info);
+
+            if (!TryStartNativeRouting(_activeNpc, _targetLocationName, false))
+            {
+                _logger.Log($"[ActionController] No se pudo crear ruta nativa hacia {_targetLocationName}. Cancelando.", LogLevel.Error);
+                FinishAction();
+            }
         }
 
         public bool IsNpcOnMission(NPC npc)
         {
             return _activeNpc == npc && _currentState != ActionState.Idle;
+        }
+
+        private bool TryStartNativeRouting(NPC npc, string targetName, bool isReturning)
+        {
+            Point targetTile = Point.Zero;
+            string targetMap = targetName;
+
+            if (isReturning)
+            {
+                targetMap = _originalPlayerMap;
+                targetTile = _originalPlayerTile;
+            }
+            else
+            {
+                var loc = Game1.getLocationFromName(targetName);
+                if (loc != null)
+                {
+                     targetTile = GetSafeTile(loc);
+                }
+                else
+                {
+                    var farm = Game1.getLocationFromName("Farm");
+                    if (farm != null)
+                    {
+                        foreach (var building in farm.buildings)
+                        {
+                            if (building.indoors.Value != null &&
+                               (building.indoors.Value.Name.Equals(targetName, StringComparison.OrdinalIgnoreCase) ||
+                                building.indoors.Value.NameOrUniqueName.Equals(targetName, StringComparison.OrdinalIgnoreCase) ||
+                                (targetName.Equals("Coop", StringComparison.OrdinalIgnoreCase) && building.buildingType.Value.Contains("Coop", StringComparison.OrdinalIgnoreCase)) ||
+                                (targetName.Equals("Barn", StringComparison.OrdinalIgnoreCase) && building.buildingType.Value.Contains("Barn", StringComparison.OrdinalIgnoreCase))))
+                            {
+                                targetMap = "Farm";
+                                targetTile = new Point(building.tileX.Value + building.doorX.Value, building.tileY.Value + building.doorY.Value);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(targetMap)) return false;
+
+            try
+            {
+                 if (npc.currentLocation.NameOrUniqueName == targetMap)
+                 {
+                      npc.controller = new PathFindController(npc, npc.currentLocation, targetTile, -1, OnRouteFinished);
+                      return true;
+                 }
+                 else
+                 {
+                      var routeDictionary = PathFindController.findPathForNPCSchedules(npc.TilePoint, npc.currentLocation, targetTile, Game1.getLocationFromName(targetMap), 10000);
+                      if (routeDictionary != null)
+                      {
+                           // Stardew Valley Schedule format: key is time, value is SchedulePathDescription
+                           var tempSchedule = new Dictionary<int, SchedulePathDescription>();
+                           int currentTime = Game1.timeOfDay;
+
+                           SchedulePathDescription spd = new SchedulePathDescription(new Stack<Point>(), 2, 0, "");
+
+                           // Utility.parseStringToIntArray for paths usually handled internally.
+                           // But since routeDictionary is already a map of Location -> RouteString,
+                           // We can use the constructor that parses the whole route dictionary.
+                           // Actually, SchedulePathDescription doesn't have a constructor for the dictionary.
+                           // NPC.parseMasterSchedule handles parsing the string into route instructions.
+
+                           // The easiest native way to force a cross map movement via Schedule is to just set Schedule = schedule and checkSchedule.
+                           // But doing this dynamically is hard since we must parse the raw route Dictionary<string, string> into the Stack<Point>.
+                           // Instead of trying to reinvent Schedule parsing, we can just use the schedule format and inject it.
+                           // The schedule parser takes a raw string format: "a_time targetMap x y facingDirection message"
+
+                           string scheduleCommand = $"{targetMap} {targetTile.X} {targetTile.Y} 2";
+
+                           // Wait, the simplest way is to manually do the route dictionary execution.
+                           npc.DirectionsToNewLocation = Utility.getRouteToLocation(npc.currentLocation, npc.TilePoint, Game1.getLocationFromName(targetMap), targetTile, 10000, npc.Name);
+
+                           if (npc.DirectionsToNewLocation != null)
+                           {
+                               // This gives us a proper SchedulePathDescription that crosses maps!
+                               // The game engine will automatically pop it from DirectionsToNewLocation and move the NPC.
+                               return true;
+                           }
+                      }
+                 }
+            }
+            catch (Exception ex)
+            {
+                _logger.Log($"Error creando ruta: {ex.Message}", LogLevel.Error);
+            }
+
+            return false;
+        }
+
+        private Point GetSafeTile(GameLocation loc)
+        {
+             return new Point(loc.Map.DisplayWidth / Game1.tileSize / 2, loc.Map.DisplayHeight / Game1.tileSize / 2);
+        }
+
+        private void OnRouteFinished(Character c, GameLocation l)
+        {
+            if (_currentState == ActionState.WalkingToTarget)
+            {
+                 if (_activeNpc != null && _activeNpc.currentLocation.Name == "Farm")
+                 {
+                     foreach (var building in _activeNpc.currentLocation.buildings)
+                     {
+                         if (building.indoors.Value != null &&
+                            Math.Abs(_activeNpc.TilePoint.X - (building.tileX.Value + building.doorX.Value)) <= 1 &&
+                            Math.Abs(_activeNpc.TilePoint.Y - (building.tileY.Value + building.doorY.Value)) <= 1)
+                         {
+                              Game1.warpCharacter(_activeNpc, building.indoors.Value.NameOrUniqueName, new Point(building.indoors.Value.warps.Count > 0 ? building.indoors.Value.warps[0].X : 2, building.indoors.Value.warps.Count > 0 ? building.indoors.Value.warps[0].Y : 2));
+                              break;
+                         }
+                     }
+                 }
+
+                 _currentState = ActionState.Inspecting;
+                 _stateTimer = 4000;
+            }
+            else if (_currentState == ActionState.WalkingBack)
+            {
+                 _currentState = ActionState.Finished;
+            }
         }
 
         private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
@@ -112,161 +206,55 @@ namespace StardewLivingValley.Services
 
             switch (_currentState)
             {
-                case ActionState.CalculatingRouteToTarget:
-                    var targetLoc = ResolveLocation(_targetLocationName);
-                    if (targetLoc != null)
-                    {
-                        _currentRoute = CrossMapPathfinder.FindMapPath(_activeNpc.currentLocation, targetLoc);
-                        if (_currentRoute != null && _currentRoute.Nodes.Count > 0)
-                        {
-                            _routeIndex = 0;
-                            _currentState = ActionState.WalkingToWarp;
-                            _logger.Log($"[ActionController] Ruta encontrada hacia {_targetLocationName}. Nodos: {_currentRoute.Nodes.Count}", LogLevel.Info);
-                        }
-                        else
-                        {
-                            _logger.Log($"[ActionController] No se encontró ruta cruzando mapas hacia {_targetLocationName}. Cancelando.", LogLevel.Error);
-                            FinishAction();
-                        }
-                    }
-                    else
-                    {
-                        _logger.Log($"[ActionController] La ubicación {_targetLocationName} no existe. Cancelando.", LogLevel.Error);
-                        FinishAction();
-                    }
-                    break;
+                case ActionState.WalkingToTarget:
+                     if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
+                     {
+                         OnRouteFinished(_activeNpc, _activeNpc.currentLocation);
+                     }
+                     break;
 
-                case ActionState.WalkingToWarp:
-                    if (_activeNpc.controller == null)
-                    {
-                        if (_currentRoute != null && _routeIndex < _currentRoute.Nodes.Count)
-                        {
-                            var nextNode = _currentRoute.Nodes[_routeIndex];
-                            if (nextNode.IsFinalDestination)
-                            {
-                                // Ya estamos en el mapa final (o era el mismo mapa)
-                                Point safeTile = new Point(_activeNpc.currentLocation.Map.DisplayWidth / Game1.tileSize / 2, _activeNpc.currentLocation.Map.DisplayHeight / Game1.tileSize / 2);
-                                _activeNpc.controller = new PathFindController(_activeNpc, _activeNpc.currentLocation, safeTile, 0, delegate(Character c, GameLocation l) {
-                                    if (!_isReturning) {
-                                        _currentState = ActionState.Inspecting;
-                                        _stateTimer = 4000;
-                                    } else {
-                                        _currentState = ActionState.WalkingToPlayer;
-                                    }
-                                });
-                                // Fallback si no hay path
-                                if (_activeNpc.controller == null || _activeNpc.controller.pathToEndPoint == null)
-                                {
-                                     if (!_isReturning) {
-                                        _currentState = ActionState.Inspecting;
-                                        _stateTimer = 4000;
-                                    } else {
-                                        _currentState = ActionState.WalkingToPlayer;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                // Caminar al warp point
-                                _activeNpc.controller = new PathFindController(_activeNpc, _activeNpc.currentLocation, nextNode.TargetWarpTile, 0, delegate(Character c, GameLocation l) {
-                                    _currentState = ActionState.WarpingToNextMap;
-                                    _stateTimer = 200;
-                                });
-                                // Fallback
-                                if (_activeNpc.controller == null || _activeNpc.controller.pathToEndPoint == null)
-                                {
-                                    _currentState = ActionState.WarpingToNextMap;
-                                    _stateTimer = 200;
-                                }
-                            }
-                        }
-                    }
-                    break;
-
-                case ActionState.WarpingToNextMap:
-                    _stateTimer -= Game1.currentGameTime.ElapsedGameTime.TotalMilliseconds;
-                    if (_stateTimer <= 0)
-                    {
-                        if (_currentRoute != null && _routeIndex < _currentRoute.Nodes.Count)
-                        {
-                            var node = _currentRoute.Nodes[_routeIndex];
-                            var nextLoc = ResolveLocation(node.LocationName);
-                            if (nextLoc != null)
-                            {
-                                Game1.warpCharacter(_activeNpc, nextLoc.NameOrUniqueName, node.ArrivalTile);
-                                _routeIndex++;
-                                _currentState = ActionState.WalkingToWarp;
-                            }
-                            else
-                            {
-                                FinishAction(); // error
-                            }
-                        }
-                    }
-                    break;
+                case ActionState.WalkingBack:
+                     if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
+                     {
+                         OnRouteFinished(_activeNpc, _activeNpc.currentLocation);
+                     }
+                     break;
 
                 case ActionState.Inspecting:
                     _stateTimer -= Game1.currentGameTime.ElapsedGameTime.TotalMilliseconds;
                     if (_stateTimer <= 0)
                     {
-                        _logger.Log($"[ActionController] Inspección terminada. Calculando ruta de regreso a {Game1.player.currentLocation.NameOrUniqueName}.", LogLevel.Info);
-                        _isReturning = true;
-                        _currentState = ActionState.CalculatingRouteBack;
-                    }
-                    else if (_activeNpc.controller == null)
-                    {
-                         Point safeTile = new Point(_activeNpc.currentLocation.Map.DisplayWidth / Game1.tileSize / 2, _activeNpc.currentLocation.Map.DisplayHeight / Game1.tileSize / 2);
-                         _activeNpc.controller = new PathFindController(_activeNpc, _activeNpc.currentLocation, new Point(safeTile.X + Game1.random.Next(-3, 3), safeTile.Y + Game1.random.Next(-3, 3)), 0);
-                    }
-                    break;
-
-                case ActionState.CalculatingRouteBack:
-                    _currentRoute = CrossMapPathfinder.FindMapPath(_activeNpc.currentLocation, Game1.player.currentLocation);
-                    if (_currentRoute != null && _currentRoute.Nodes.Count > 0)
-                    {
-                        _routeIndex = 0;
-                        _currentState = ActionState.WalkingToWarp;
-                        _logger.Log($"[ActionController] Ruta encontrada de regreso. Nodos: {_currentRoute.Nodes.Count}", LogLevel.Info);
-                    }
-                    else
-                    {
-                        _logger.Log($"[ActionController] No se encontró ruta de regreso o jugador no encontrado. Memoria de abandono.", LogLevel.Warn);
-                        StoreAbandonmentMemory();
-                        FinishAction();
-                    }
-                    break;
-
-                case ActionState.WalkingToPlayer:
-                    if (_activeNpc.currentLocation == Game1.player.currentLocation)
-                    {
-                        Point playerTile = Game1.player.TilePoint;
-                        
-                        // Si ya está cerca, terminar
-                        if (Vector2.Distance(Game1.player.Tile, _activeNpc.Tile) <= 2f)
+                        // Exit building if inside
+                        if (_activeNpc.currentLocation.Name.StartsWith("Coop") || _activeNpc.currentLocation.Name.StartsWith("Barn") || _activeNpc.currentLocation.Name.StartsWith("Shed") || _activeNpc.currentLocation.Name.StartsWith("SlimeHutch"))
                         {
-                            FinishAction();
-                            return;
-                        }
-
-                        if (_activeNpc.controller == null)
-                        {
-                            _activeNpc.controller = new PathFindController(_activeNpc, _activeNpc.currentLocation, playerTile, 1, delegate(Character c, GameLocation l) {
-                                FinishAction();
-                            });
-
-                            if (_activeNpc.controller == null || _activeNpc.controller.pathToEndPoint == null)
+                            var farm = Game1.getLocationFromName("Farm");
+                            foreach(var b in farm.buildings)
                             {
-                                // No pudo llegar al tile exacto, terminar e intentar abrir
-                                FinishAction();
+                                if (b.indoors.Value != null && b.indoors.Value.NameOrUniqueName == _activeNpc.currentLocation.NameOrUniqueName)
+                                {
+                                     Game1.warpCharacter(_activeNpc, "Farm", new Point(b.tileX.Value + b.doorX.Value, b.tileY.Value + b.doorY.Value + 1));
+                                     break;
+                                }
                             }
                         }
+
+                        _logger.Log($"[ActionController] Inspección terminada. Calculando ruta de regreso a {_originalPlayerMap}.", LogLevel.Info);
+                        _currentState = ActionState.WalkingBack;
+                        if (!TryStartNativeRouting(_activeNpc, _originalPlayerMap, true))
+                        {
+                            _logger.Log($"[ActionController] No se pudo volver. Guardando memoria.", LogLevel.Warn);
+                            StoreAbandonmentMemory();
+                            FinishAction();
+                        }
                     }
-                    else
+                    break;
+
+                case ActionState.Finished:
+                    if (Game1.player.currentLocation.NameOrUniqueName != _activeNpc.currentLocation.NameOrUniqueName || Vector2.Distance(Game1.player.Tile, _activeNpc.Tile) > 15f)
                     {
-                        _logger.Log($"[ActionController] El jugador se movió de nuevo. Abortando regreso.", LogLevel.Warn);
                         StoreAbandonmentMemory();
-                        FinishAction();
                     }
+                    FinishAction();
                     break;
             }
         }
@@ -275,7 +263,7 @@ namespace StardewLivingValley.Services
         {
             if (_activeNpc != null && _memoryService != null)
             {
-                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Fui a revisar {_targetLocationName} como me pediste, pero cuando regresé ya no estabas.");
+                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Fui a revisar {_targetLocationName} como me pediste, pero cuando regresé a buscarte al lugar donde te vi por última vez, ya no estabas ahí. Tuve que seguir con mis cosas.");
             }
         }
 
@@ -287,6 +275,12 @@ namespace StardewLivingValley.Services
             _onCompleteCallback?.Invoke();
             _onCompleteCallback = null;
             
+            if (_activeNpc != null)
+            {
+                 _activeNpc.DirectionsToNewLocation = null;
+                 _activeNpc.controller = null;
+                 _activeNpc.checkSchedule(Game1.timeOfDay); // Resume regular schedule
+            }
             _activeNpc = null;
         }
     }

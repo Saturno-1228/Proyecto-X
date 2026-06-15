@@ -164,17 +164,21 @@ namespace StardewLivingValley.Services
                 if (_activeNpc.Schedule != null && _activeNpc.Schedule.Count > 0)
                 {
                     int nextActivityTime = 2600;
-                    foreach (var key in _activeNpc.Schedule.Keys)
+                    foreach (var key in Enumerable.OrderBy(_activeNpc.Schedule.Keys, k => k))
                     {
                         if (key > Game1.timeOfDay && key < nextActivityTime)
                         {
                             nextActivityTime = key;
+                            break;
                         }
                     }
 
                     if (nextActivityTime < 2600)
                     {
-                        timeConstraintRule = $"Tu próxima actividad programada es a las {nextActivityTime}. Calcula el tiempo mentalmente: si el jugador te pide ir a otro mapa ([go_to]), considera que te tomará varios minutos de juego ir y volver caminando. REGLA ESTRICTA: Si crees que ir a revisar el lugar hará que llegues tarde a tu actividad de las {nextActivityTime}, NO aceptes y dile al jugador que estás demasiado ocupado ahora mismo.";
+                        // Estimar velocidad de caminata: Velocidad base 2. En SV, 10 min de juego son ~7 seg reales.
+                        // Los NPCs toman un tiempo considerable cruzando mapas y abriendo puertas.
+                        // Calculamos aproximadamente que una caminata corta a la granja puede tomar entre 30 a 50 min del juego (ida y vuelta).
+                        timeConstraintRule = $"Tu próxima actividad programada en tu agenda es a las {nextActivityTime} (la hora actual es {Game1.timeOfDay}). REGLA ESTRICTA DE TIEMPO: Moverte hacia otro lugar caminando de ida y vuelta te tomará un mínimo de 40 a 60 minutos de tiempo del juego. Evalúa mentalmente si tienes el tiempo suficiente para ir a donde te pidan y volver sin faltar a tu cita de las {nextActivityTime} (excepto si es urgente, o si es algo vital en tu personalidad ignorarla). Si sientes que no te dará tiempo de ir y regresar (por ejemplo, si te piden ir a la Granja y tu evento es en 30 minutos), debes decirle al jugador creativamente que no puedes ir porque se te hace tarde y tienes cosas que hacer, o que podrías ir pero tendrías que apresurarte y podrías llegar tarde.";
                     }
                 }
 
