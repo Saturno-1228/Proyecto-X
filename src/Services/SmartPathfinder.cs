@@ -220,7 +220,44 @@ namespace StardewLivingValley.Services
         private static bool IsTileWalkable(GameLocation location, Point tile, NPC npc)
         {
             // ═══════════════════════════════════════════════════════
-            // 1. CAPA ESTÁTICA DEL MAPA (agua, paredes, bordes)
+            // 1. CAPA BUILDINGS DIRECTA (acantilados, paredes, elevaciones)
+            //    Este es el check MÁS IMPORTANTE para zonas elevadas.
+            //    isTilePassable a veces falla, así que verificamos directo.
+            // ═══════════════════════════════════════════════════════
+            try
+            {
+                var buildingsLayer = location.Map.GetLayer("Buildings");
+                if (buildingsLayer != null)
+                {
+                    var buildingTile = buildingsLayer.Tiles[tile.X, tile.Y];
+                    if (buildingTile != null)
+                    {
+                        // Solo es pasable si tiene explícitamente "Passable" o "Shadow"
+                        bool hasPassable = buildingTile.TileIndexProperties.ContainsKey("Passable") || 
+                                           buildingTile.Properties.ContainsKey("Passable");
+                        bool hasShadow = buildingTile.TileIndexProperties.ContainsKey("Shadow") || 
+                                         buildingTile.Properties.ContainsKey("Shadow");
+                        if (!hasPassable && !hasShadow)
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch { /* Protección contra tiles fuera de rango */ }
+
+            // ═══════════════════════════════════════════════════════
+            // 2. BARRERAS ESPECÍFICAS PARA NPCs (propiedades de tile)
+            //    Estas propiedades en la capa "Back" marcan zonas donde
+            //    los NPCs no deben caminar (bordes de acantilados, etc.)
+            // ═══════════════════════════════════════════════════════
+            if (location.doesTileHaveProperty(tile.X, tile.Y, "NPCBarrier", "Back") != null)
+                return false;
+            if (location.doesTileHaveProperty(tile.X, tile.Y, "NoPath", "Back") != null)
+                return false;
+
+            // ═══════════════════════════════════════════════════════
+            // 3. CAPA ESTÁTICA DEL MAPA (verificación redundante como respaldo)
             // ═══════════════════════════════════════════════════════
             var xLocation = new xTile.Dimensions.Location(tile.X * Game1.tileSize + Game1.tileSize / 2, tile.Y * Game1.tileSize + Game1.tileSize / 2);
             if (!location.isTilePassable(xLocation, Game1.viewport))
@@ -229,7 +266,7 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 2. OBJETOS DEL JUGADOR (aspersores, cofres, máquinas, vallas, etc.)
+            // 4. OBJETOS DEL JUGADOR (aspersores, cofres, máquinas, vallas)
             // ═══════════════════════════════════════════════════════
             Vector2 tileVec = new Vector2(tile.X, tile.Y);
             if (location.objects.ContainsKey(tileVec))
@@ -238,21 +275,19 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 3. TERRAIN FEATURES (árboles, árboles frutales, tocones)
+            // 5. TERRAIN FEATURES (árboles, árboles frutales)
             // ═══════════════════════════════════════════════════════
             if (location.terrainFeatures.ContainsKey(tileVec))
             {
                 var feature = location.terrainFeatures[tileVec];
-                // Árboles y árboles frutales bloquean el paso completamente
                 if (feature is Tree || feature is FruitTree)
                 {
                     return false;
                 }
-                // Grass, HoeDirt (cultivos), Flooring son pasables — no bloquear
             }
 
             // ═══════════════════════════════════════════════════════
-            // 4. RESOURCE CLUMPS (rocas grandes, troncos, meteoritos)
+            // 6. RESOURCE CLUMPS (rocas grandes, troncos, meteoritos)
             // ═══════════════════════════════════════════════════════
             foreach (var clump in location.resourceClumps)
             {
@@ -263,7 +298,7 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 5. EDIFICIOS (footprints completos, excepto puerta humana)
+            // 7. EDIFICIOS (footprints completos, excepto puerta humana)
             // ═══════════════════════════════════════════════════════
             if (location.buildings != null)
             {
@@ -274,12 +309,9 @@ namespace StardewLivingValley.Services
                     int bw = building.tilesWide.Value;
                     int bh = building.tilesHigh.Value;
 
-                    // Verificar si el tile está dentro del footprint del edificio
-                    if (tile.X >= bx && tile.X < bx + bw && tile.Y >= by && tile.Y < bx + bh)
+                    if (tile.X >= bx && tile.X < bx + bw && tile.Y >= by && tile.Y < by + bh)
                     {
-                        // Permitir la puerta humana (tile de entrada)
                         Point door = building.getPointForHumanDoor();
-                        // La puerta y el tile justo debajo son caminables
                         if ((tile.X == door.X && tile.Y == door.Y) || (tile.X == door.X && tile.Y == door.Y + 1))
                             continue;
                         
@@ -289,7 +321,7 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 6. MUEBLES (en interiores como FarmHouse)
+            // 8. MUEBLES (en interiores como FarmHouse)
             // ═══════════════════════════════════════════════════════
             if (location.furniture != null && location.furniture.Count > 0)
             {
@@ -307,7 +339,7 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 7. LARGE TERRAIN FEATURES (arbustos grandes)
+            // 9. LARGE TERRAIN FEATURES (arbustos grandes)
             // ═══════════════════════════════════════════════════════
             if (location.largeTerrainFeatures != null)
             {
@@ -322,8 +354,7 @@ namespace StardewLivingValley.Services
             }
 
             // ═══════════════════════════════════════════════════════
-            // 8. COLISIÓN GENERAL DEL ENGINE (último recurso)
-            //    Atrapa cualquier cosa que no hayamos cubierto arriba.
+            // 10. COLISIÓN GENERAL DEL ENGINE (último recurso)
             // ═══════════════════════════════════════════════════════
             Rectangle boundingBox = new Rectangle(tile.X * Game1.tileSize + 8, tile.Y * Game1.tileSize + 8, 48, 48);
             if (location.isCollidingPosition(boundingBox, Game1.viewport, true, 0, false, npc))
