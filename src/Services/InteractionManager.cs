@@ -28,6 +28,7 @@ namespace StardewLivingValley.Services
         private NPC? _activeNpc;
         private NPCDialogueMenu? _activeMenu;
         private Action<NPC, string>? _reopenDialogueCallback;
+        private Action? _onInteractionEnded;
 
         public void RegisterReopenCallback(Action<NPC, string> callback)
         {
@@ -267,45 +268,42 @@ namespace StardewLivingValley.Services
                     string targetLocation = goToMatch.Groups[1].Value.Trim();
                     cleanResponse = cleanResponse.Replace(goToMatch.Value, "").Trim();
                     
-                    _sessionMessages.Add(new VeniceMessage { Role = "user", Content = playerMessage });
-                    _sessionMessages.Add(new VeniceMessage { Role = "assistant", Content = cleanResponse });
-                    
-                    if (Game1.activeClickableMenu == _activeMenu)
-                    {
-                        Game1.exitActiveMenu();
-                    }
-                    
-                    if (_activeNpc != null)
-                    {
-                        _activeNpc.CurrentDialogue.Clear();
-                        _activeNpc.movementPause = 0;
-                    }
-
                     NPC npcToInspect = _activeNpc;
-                    _actionController.StartInspection(npcToInspect, targetLocation, () => {
-                        _logger.Log($"[InteractionManager] Callback de inspección. NPC: {npcToInspect.Name}, Map NPC: {npcToInspect.currentLocation?.NameOrUniqueName}, Map Player: {Game1.player.currentLocation?.NameOrUniqueName}", LogLevel.Info);
-                        
-                        if (npcToInspect.currentLocation == null || Game1.player.currentLocation == null)
+                    
+                    _onInteractionEnded = () => {
+                        if (npcToInspect != null)
                         {
-                            _logger.Log($"[InteractionManager] Error: Ubicación actual del NPC o del jugador es nula.", LogLevel.Error);
-                            return;
-                        }
+                            npcToInspect.CurrentDialogue.Clear();
+                            npcToInspect.movementPause = 0;
 
-                        float distance = Vector2.Distance(Game1.player.Tile, npcToInspect.Tile);
-                        _logger.Log($"[InteractionManager] Distancia al jugador: {distance} tiles. Mismo mapa: {Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName}", LogLevel.Info);
+                            _actionController.StartInspection(npcToInspect, targetLocation, () => {
+                                _logger.Log($"[InteractionManager] Callback de inspección. NPC: {npcToInspect.Name}, Map NPC: {npcToInspect.currentLocation?.NameOrUniqueName}, Map Player: {Game1.player.currentLocation?.NameOrUniqueName}", LogLevel.Info);
+                                
+                                if (npcToInspect.currentLocation == null || Game1.player.currentLocation == null)
+                                {
+                                    _logger.Log($"[InteractionManager] Error: Ubicación actual del NPC o del jugador es nula.", LogLevel.Error);
+                                    return;
+                                }
 
-                        if (Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName && distance <= 10f)
-                        {
-                            _logger.Log($"[InteractionManager] Reabriendo diálogo con {npcToInspect.Name}.", LogLevel.Info);
-                            _reopenDialogueCallback?.Invoke(npcToInspect, "*Te observa esperando a que le cuentes lo que viste*");
-                        }
-                        else
-                        {
-                            _logger.Log($"[InteractionManager] No se reabre el diálogo. Distancia > 10 ({distance}) o mapas diferentes (Player: {Game1.player.currentLocation.NameOrUniqueName}, NPC: {npcToInspect.currentLocation.NameOrUniqueName}).", LogLevel.Warn);
-                        }
-                    });
+                                float distance = Vector2.Distance(Game1.player.Tile, npcToInspect.Tile);
+                                _logger.Log($"[InteractionManager] Distancia al jugador: {distance} tiles. Mismo mapa: {Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName}", LogLevel.Info);
 
-                    return;
+                                if (Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName && distance <= 10f)
+                                {
+                                    _logger.Log($"[InteractionManager] Reabriendo diálogo con {npcToInspect.Name}.", LogLevel.Info);
+                                    _reopenDialogueCallback?.Invoke(npcToInspect, "*Te observa esperando a que le cuentes lo que viste*");
+                                }
+                                else
+                                {
+                                    _logger.Log($"[InteractionManager] No se reabre el diálogo. Distancia > 10 ({distance}) o mapas diferentes.", LogLevel.Warn);
+                                }
+                            });
+                        }
+                    };
+                    
+                    // No hacemos return; dejamos que el código pase al paso 6 y 7
+                    // para que el jugador pueda leer la respuesta. La misión iniciará
+                    // cuando el jugador cierre el chat manualmente.
                 }
 
                 // 6. Guardar en memoria de sesión
@@ -327,7 +325,7 @@ namespace StardewLivingValley.Services
             catch (Exception ex)
             {
                 _logger.Log($"Error interno de IA: {ex.Message}", LogLevel.Error);
-                if (Game1.activeClickableMenu == _activeMenu)
+                if (_activeMenu != null && Game1.activeClickableMenu == _activeMenu)
                     _activeMenu.ReceiveAiResponse("... (Me duele la cabeza, no puedo pensar)");
             }
         }
@@ -336,6 +334,9 @@ namespace StardewLivingValley.Services
         {
             _activeNpc = null;
             _activeMenu = null;
+            
+            _onInteractionEnded?.Invoke();
+            _onInteractionEnded = null;
         }
     }
 }
