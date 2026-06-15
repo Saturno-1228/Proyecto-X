@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Locations;
 using StardewValley.Pathfinding;
 
 namespace StardewLivingValley.Services
@@ -107,7 +108,8 @@ namespace StardewLivingValley.Services
                                 (targetName.Equals("Barn", StringComparison.OrdinalIgnoreCase) && building.buildingType.Value.Contains("Barn", StringComparison.OrdinalIgnoreCase))))
                             {
                                 targetMap = "Farm";
-                                targetTile = new Point(building.tileX.Value + building.doorX.Value, building.tileY.Value + building.doorY.Value);
+                                targetTile = building.getPointForHumanDoor();
+                                targetTile.Y += 1; // Un tile debajo de la puerta para que sea caminable
                                 break;
                             }
                         }
@@ -121,42 +123,86 @@ namespace StardewLivingValley.Services
             {
                  if (npc.currentLocation.NameOrUniqueName == targetMap)
                  {
-                      npc.controller = new PathFindController(npc, npc.currentLocation, targetTile, -1, OnRouteFinished);
+                      var localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
+                      if (localPath != null && localPath.Count > 0)
+                      {
+                           npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
+                           {
+                                finalFacingDirection = 2,
+                                endBehaviorFunction = OnRouteFinished
+                           };
+                      }
+                      else
+                      {
+                           _logger.Log($"[ActionController] Ruta local no encontrada en {targetMap} hacia {targetTile}. Teletransportando...", LogLevel.Warn);
+                           Game1.warpCharacter(npc, targetMap, new Vector2(targetTile.X, targetTile.Y));
+                           OnRouteFinished(npc, npc.currentLocation);
+                      }
                       return true;
                  }
                  else
                  {
-                      var routeDictionary = PathFindController.findPathForNPCSchedules(npc.TilePoint, npc.currentLocation, targetTile, Game1.getLocationFromName(targetMap), 10000);
-                      if (routeDictionary != null)
+                      var pathDescription = npc.pathfindToNextScheduleLocation(
+                          "temporary_mission",
+                          npc.currentLocation.NameOrUniqueName,
+                          npc.TilePoint.X,
+                          npc.TilePoint.Y,
+                          targetMap,
+                          targetTile.X,
+                          targetTile.Y,
+                          2, // final facing direction
+                          null,
+                          null
+                      );
+                      if (pathDescription != null && pathDescription.route != null && pathDescription.route.Count > 0)
                       {
-                           // Stardew Valley Schedule format: key is time, value is SchedulePathDescription
-                           var tempSchedule = new Dictionary<int, SchedulePathDescription>();
-                           int currentTime = Game1.timeOfDay;
-
-                           SchedulePathDescription spd = new SchedulePathDescription(new Stack<Point>(), 2, 0, "");
-
-                           // Utility.parseStringToIntArray for paths usually handled internally.
-                           // But since routeDictionary is already a map of Location -> RouteString,
-                           // We can use the constructor that parses the whole route dictionary.
-                           // Actually, SchedulePathDescription doesn't have a constructor for the dictionary.
-                           // NPC.parseMasterSchedule handles parsing the string into route instructions.
-
-                           // The easiest native way to force a cross map movement via Schedule is to just set Schedule = schedule and checkSchedule.
-                           // But doing this dynamically is hard since we must parse the raw route Dictionary<string, string> into the Stack<Point>.
-                           // Instead of trying to reinvent Schedule parsing, we can just use the schedule format and inject it.
-                           // The schedule parser takes a raw string format: "a_time targetMap x y facingDirection message"
-
-                           string scheduleCommand = $"{targetMap} {targetTile.X} {targetTile.Y} 2";
-
-                           // Wait, the simplest way is to manually do the route dictionary execution.
-                           npc.DirectionsToNewLocation = Utility.getRouteToLocation(npc.currentLocation, npc.TilePoint, Game1.getLocationFromName(targetMap), targetTile, 10000, npc.Name);
-
-                           if (npc.DirectionsToNewLocation != null)
+                           npc.DirectionsToNewLocation = pathDescription;
+                           npc.controller = new PathFindController(pathDescription.route, npc, npc.currentLocation)
                            {
-                               // This gives us a proper SchedulePathDescription that crosses maps!
-                               // The game engine will automatically pop it from DirectionsToNewLocation and move the NPC.
+                                finalFacingDirection = pathDescription.facingDirection,
+                                endBehaviorFunction = OnRouteFinished
+                           };
+                           return true;
+                      }
+                      
+                      _logger.Log($"[ActionController] No se encontró ruta nativa hacia {targetMap} desde {npc.currentLocation.NameOrUniqueName}. Usando fallback...", LogLevel.Warn);
+                      
+                      // Fallback 1: Buscar warp directo
+                      Warp directWarp = null;
+                      foreach (var w in npc.currentLocation.warps) {
+                           if (w.TargetName == targetMap) { directWarp = w; break; }
+                      }
+                      
+                      if (directWarp != null) 
+                      {
+                           var routeToWarp = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(directWarp.X, directWarp.Y), npc.currentLocation, 30000, npc);
+                           if (routeToWarp != null && routeToWarp.Count > 0)
+                           {
+                               npc.controller = new PathFindController(routeToWarp, npc, npc.currentLocation)
+                               {
+                                    finalFacingDirection = 2,
+                                    endBehaviorFunction = (c, l) => {
+                                         Game1.warpCharacter(npc, targetMap, new Vector2(directWarp.TargetX, directWarp.TargetY));
+                                         TryStartNativeRouting(npc, targetName, isReturning);
+                                    }
+                               };
                                return true;
                            }
+                      }
+                      
+                      // Fallback 2: Teletransporte directo si están muy lejos
+                      _logger.Log($"[ActionController] Fallback a teletransporte directo hacia {targetMap}.", LogLevel.Info);
+                      GameLocation targetGameLoc = Game1.getLocationFromName(targetMap);
+                      if (targetGameLoc != null) 
+                      {
+                           Point warpPoint = GetSafeTile(targetGameLoc);
+                           if (targetMap == "Farm") warpPoint = new Point(64, 15);
+                           else if (targetMap == "Town") warpPoint = new Point(12, 54);
+                           else if (targetMap == "FarmHouse") warpPoint = (targetGameLoc as FarmHouse)?.getEntryLocation() ?? warpPoint;
+                           
+                           Game1.warpCharacter(npc, targetMap, warpPoint);
+                           TryStartNativeRouting(npc, targetName, isReturning);
+                           return true;
                       }
                  }
             }
@@ -182,8 +228,8 @@ namespace StardewLivingValley.Services
                      foreach (var building in _activeNpc.currentLocation.buildings)
                      {
                          if (building.indoors.Value != null &&
-                            Math.Abs(_activeNpc.TilePoint.X - (building.tileX.Value + building.doorX.Value)) <= 1 &&
-                            Math.Abs(_activeNpc.TilePoint.Y - (building.tileY.Value + building.doorY.Value)) <= 1)
+                            Math.Abs(_activeNpc.TilePoint.X - building.getPointForHumanDoor().X) <= 1 &&
+                             Math.Abs(_activeNpc.TilePoint.Y - building.getPointForHumanDoor().Y) <= 2)
                          {
                               Game1.warpCharacter(_activeNpc, building.indoors.Value.NameOrUniqueName, new Point(building.indoors.Value.warps.Count > 0 ? building.indoors.Value.warps[0].X : 2, building.indoors.Value.warps.Count > 0 ? building.indoors.Value.warps[0].Y : 2));
                               break;
@@ -232,7 +278,7 @@ namespace StardewLivingValley.Services
                             {
                                 if (b.indoors.Value != null && b.indoors.Value.NameOrUniqueName == _activeNpc.currentLocation.NameOrUniqueName)
                                 {
-                                     Game1.warpCharacter(_activeNpc, "Farm", new Point(b.tileX.Value + b.doorX.Value, b.tileY.Value + b.doorY.Value + 1));
+                                     Game1.warpCharacter(_activeNpc, "Farm", new Point(b.getPointForHumanDoor().X, b.getPointForHumanDoor().Y + 1));
                                      break;
                                 }
                             }

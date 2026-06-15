@@ -274,6 +274,12 @@ namespace StardewLivingValley.Services
                     {
                         Game1.exitActiveMenu();
                     }
+                    
+                    if (_activeNpc != null)
+                    {
+                        _activeNpc.CurrentDialogue.Clear();
+                        _activeNpc.movementPause = 0;
+                    }
 
                     NPC npcToInspect = _activeNpc;
                     _actionController.StartInspection(npcToInspect, targetLocation, () => {
