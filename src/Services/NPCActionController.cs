@@ -124,6 +124,14 @@ namespace StardewLivingValley.Services
                  if (npc.currentLocation.NameOrUniqueName == targetMap)
                  {
                       var localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
+                      
+                      // Fallback a SmartPathfinder
+                      if (localPath == null || localPath.Count == 0)
+                      {
+                           _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
+                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
+                      }
+
                       if (localPath != null && localPath.Count > 0)
                       {
                            npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
@@ -134,9 +142,22 @@ namespace StardewLivingValley.Services
                       }
                       else
                       {
-                           _logger.Log($"[ActionController] Ruta local no encontrada en {targetMap} hacia {targetTile}. Teletransportando...", LogLevel.Warn);
-                           Game1.warpCharacter(npc, targetMap, new Vector2(targetTile.X, targetTile.Y));
-                           OnRouteFinished(npc, npc.currentLocation);
+                           _logger.Log($"[ActionController] SmartPathfinder también falló en {targetMap} hacia {targetTile}. Cancelando misión.", LogLevel.Warn);
+                           if (isReturning)
+                           {
+                               StoreAbandonmentMemory();
+                               FinishAction();
+                           }
+                           else
+                           {
+                               _currentState = ActionState.WalkingBack;
+                               StoreAbandonmentMemoryBlocked();
+                               if (!TryStartNativeRouting(_activeNpc, _originalPlayerMap, true))
+                               {
+                                   StoreAbandonmentMemory();
+                                   FinishAction();
+                               }
+                           }
                       }
                       return true;
                  }
@@ -310,6 +331,14 @@ namespace StardewLivingValley.Services
             if (_activeNpc != null && _memoryService != null)
             {
                 _memoryService.SavePlayerMemory(_activeNpc.Name, $"Fui a revisar {_targetLocationName} como me pediste, pero cuando regresé a buscarte al lugar donde te vi por última vez, ya no estabas ahí. Tuve que seguir con mis cosas.");
+            }
+        }
+
+        private void StoreAbandonmentMemoryBlocked()
+        {
+            if (_activeNpc != null && _memoryService != null)
+            {
+                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Intenté ir a revisar {_targetLocationName} como me pediste, pero el camino estaba completamente bloqueado por obstáculos físicos y no pude pasar. Tuve que regresar.");
             }
         }
 
