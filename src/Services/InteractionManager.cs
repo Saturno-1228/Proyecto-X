@@ -24,11 +24,13 @@ namespace StardewLivingValley.Services
 
         private CancellationTokenSource? _cts;
         private List<VeniceMessage> _sessionMessages = new List<VeniceMessage>();
+        private List<VeniceMessage> _savedSessionMessages = new List<VeniceMessage>();
         private Dictionary<string, (int Day, int Time)> _lastGiftTimeByNpc = new Dictionary<string, (int Day, int Time)>();
         private NPC? _activeNpc;
         private NPCDialogueMenu? _activeMenu;
         private Action<NPC, string>? _reopenDialogueCallback;
         private Action? _onInteractionEnded;
+        private bool _isPostInspection = false;
 
         public void RegisterReopenCallback(Action<NPC, string> callback)
         {
@@ -50,7 +52,19 @@ namespace StardewLivingValley.Services
         {
             _activeNpc = npc;
             _activeMenu = menu;
-            _sessionMessages.Clear();
+            
+            // Si es post-inspección, restaurar el historial de la conversación original
+            if (_isPostInspection && _savedSessionMessages.Count > 0)
+            {
+                _sessionMessages = new List<VeniceMessage>(_savedSessionMessages);
+                _isPostInspection = false;
+                _savedSessionMessages.Clear();
+                _logger.Log($"[InteractionManager] Historial de conversación restaurado ({_sessionMessages.Count} mensajes).", LogLevel.Info);
+            }
+            else
+            {
+                _sessionMessages.Clear();
+            }
             
             // Inyectar el diálogo Vanilla inicial como memoria de la IA
             if (!string.IsNullOrWhiteSpace(initialDialogue))
@@ -270,6 +284,12 @@ namespace StardewLivingValley.Services
                     
                     NPC npcToInspect = _activeNpc;
                     
+                    // Guardar historial de conversación para que Emily recuerde qué le pidieron
+                    _savedSessionMessages = new List<VeniceMessage>(_sessionMessages);
+                    // Añadir el mensaje actual y la respuesta al historial guardado
+                    _savedSessionMessages.Add(new VeniceMessage { Role = "user", Content = playerMessage });
+                    _savedSessionMessages.Add(new VeniceMessage { Role = "assistant", Content = cleanResponse });
+                    
                     _onInteractionEnded = () => {
                         if (npcToInspect != null)
                         {
@@ -288,14 +308,22 @@ namespace StardewLivingValley.Services
                                 float distance = Vector2.Distance(Game1.player.Tile, npcToInspect.Tile);
                                 _logger.Log($"[InteractionManager] Distancia al jugador: {distance} tiles. Mismo mapa: {Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName}", LogLevel.Info);
 
-                                if (Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName && distance <= 10f)
+                                if (Game1.player.currentLocation.NameOrUniqueName == npcToInspect.currentLocation.NameOrUniqueName && distance <= 15f)
                                 {
                                     _logger.Log($"[InteractionManager] Reabriendo diálogo con {npcToInspect.Name}.", LogLevel.Info);
-                                    _reopenDialogueCallback?.Invoke(npcToInspect, "*Te observa esperando a que le cuentes lo que viste*");
+                                    _isPostInspection = true;
+                                    
+                                    // Construir el reporte de inspección con datos REALES
+                                    string inspectionReport = _actionController.GetLastInspectionReport();
+                                    string reopenMessage = !string.IsNullOrEmpty(inspectionReport) 
+                                        ? inspectionReport
+                                        : "*Te observa esperando a que le cuentes lo que viste*";
+                                    
+                                    _reopenDialogueCallback?.Invoke(npcToInspect, reopenMessage);
                                 }
                                 else
                                 {
-                                    _logger.Log($"[InteractionManager] No se reabre el diálogo. Distancia > 10 ({distance}) o mapas diferentes.", LogLevel.Warn);
+                                    _logger.Log($"[InteractionManager] No se reabre el diálogo. Distancia > 15 ({distance}) o mapas diferentes.", LogLevel.Warn);
                                 }
                             });
                         }
@@ -303,7 +331,13 @@ namespace StardewLivingValley.Services
                     
                     // No hacemos return; dejamos que el código pase al paso 6 y 7
                     // para que el jugador pueda leer la respuesta. La misión iniciará
-                    // cuando el jugador cierre el chat manualmente.
+                    // cuando el menú se cierre automáticamente.
+                    
+                    // Activar auto-cierre: páginas avanzan solas + cierre 2s después de terminar
+                    if (_activeMenu != null)
+                    {
+                        _activeMenu.SetAutoClose();
+                    }
                 }
 
                 // 6. Guardar en memoria de sesión

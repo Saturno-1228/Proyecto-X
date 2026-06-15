@@ -29,7 +29,11 @@ namespace StardewLivingValley.UI
         private int _typewriterIndex = 0;
         private double _typewriterTimer = 0;
         private const double TypewriterSpeedMs = 35.0; // 15% más lento que antes (30.0 -> 35.0)
-        // private double _autoPageDelayTimer = 0;
+
+        // Auto-cierre para misiones [go_to]
+        private bool _autoCloseAfterTyping = false;
+        private double _autoCloseTimer = 0;
+        private const double AutoCloseDelayMs = 2000.0; // 2 segundos después de terminar
 
         // --- Variables de Paginación e Historial ---
         private List<string> _historyPages = new List<string>();
@@ -77,6 +81,12 @@ namespace StardewLivingValley.UI
             _textBox.OnEnterPressed += HandleEnterPressed;
             
             Game1.playSound("dialogueCharacter");
+        }
+
+        public void SetAutoClose()
+        {
+            _autoCloseAfterTyping = true;
+            _autoCloseTimer = 0;
         }
 
         private void CalculateLayout()
@@ -273,6 +283,32 @@ namespace StardewLivingValley.UI
 
                         if (_typewriterIndex % 3 == 0) 
                             Game1.playSound("dialogueCharacter");
+                    }
+                }
+                else if (_autoCloseAfterTyping)
+                {
+                    // Auto-avanzar páginas sin clic del jugador
+                    if (_historyIndex < _historyPages.Count - 1)
+                    {
+                        _autoCloseTimer += time.ElapsedGameTime.TotalMilliseconds;
+                        if (_autoCloseTimer >= 1500.0) // 1.5 segundos entre páginas
+                        {
+                            _historyIndex++;
+                            _aiResponseText = _historyPages[_historyIndex];
+                            _typewriterIndex = 0;
+                            _autoCloseTimer = 0;
+                            Game1.playSound("smallSelect");
+                        }
+                    }
+                    else
+                    {
+                        // Última página terminada, esperar 2 segundos y cerrar
+                        _autoCloseTimer += time.ElapsedGameTime.TotalMilliseconds;
+                        if (_autoCloseTimer >= AutoCloseDelayMs)
+                        {
+                            Game1.exitActiveMenu();
+                            Game1.playSound("dialogueCharacterClose");
+                        }
                     }
                 }
             }

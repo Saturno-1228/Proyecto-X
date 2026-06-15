@@ -28,10 +28,12 @@ namespace StardewLivingValley.Services
         private string _targetLocationName = "";
         private Action? _onCompleteCallback;
         private MemoryService? _memoryService;
+        private ObservationEngine? _observationEngine;
         
         private string _originalPlayerMap = "";
         private Point _originalPlayerTile;
         private double _stateTimer = 0;
+        private string _inspectionReport = "";
 
         // Sistema de estabilización post-warp
         private int _postWarpTicks = 0;
@@ -51,6 +53,16 @@ namespace StardewLivingValley.Services
         public void SetMemoryService(MemoryService memoryService)
         {
             _memoryService = memoryService;
+        }
+
+        public void SetObservationEngine(ObservationEngine observationEngine)
+        {
+            _observationEngine = observationEngine;
+        }
+
+        public string GetLastInspectionReport()
+        {
+            return _inspectionReport;
         }
 
         public void StartInspection(NPC npc, string targetLocation, Action onComplete)
@@ -90,14 +102,15 @@ namespace StardewLivingValley.Services
             Point targetTile = Point.Zero;
             string targetMap = targetName;
 
-            if (isReturning)
-            {
-                targetMap = _originalPlayerMap;
-                targetTile = _originalPlayerTile;
-            }
-            else
-            {
-                var loc = Game1.getLocationFromName(targetName);
+             if (isReturning)
+             {
+                 // Bug 4: Usar posición ACTUAL del jugador, no la guardada
+                 targetMap = Game1.player.currentLocation?.NameOrUniqueName ?? _originalPlayerMap;
+                 targetTile = Game1.player.TilePoint;
+             }
+             else
+             {
+                 var loc = Game1.getLocationFromName(targetName);
                 if (loc != null)
                 {
                      targetTile = GetSafeTile(loc);
@@ -127,19 +140,77 @@ namespace StardewLivingValley.Services
 
             if (string.IsNullOrEmpty(targetMap)) return false;
 
-            try
-            {
-                 if (npc.currentLocation.NameOrUniqueName == targetMap)
-                 {
-                      _logger.Log($"[ActionController] Buscando ruta local en '{targetMap}': NPC en {npc.TilePoint} hacia {targetTile}", LogLevel.Info);
-                      var localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
-                      
-                      // Fallback a SmartPathfinder
-                      if (localPath == null || localPath.Count == 0)
-                      {
-                           _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
-                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
-                      }
+             try
+             {
+                  // Detectar si el NPC está en un interior de edificio y necesita salir a Farm primero
+                  if (npc.currentLocation.NameOrUniqueName != targetMap && IsInsideFarmBuilding(npc.currentLocation))
+                  {
+                       _logger.Log($"[ActionController] NPC está dentro de un edificio '{npc.currentLocation.NameOrUniqueName}'. Buscando warp de salida...", LogLevel.Info);
+                       
+                       // Buscar el warp de salida del edificio (siempre va a Farm)
+                       Warp? exitWarp = null;
+                       foreach (var w in npc.currentLocation.warps)
+                       {
+                            exitWarp = w;
+                            break; // El primer warp de un edificio siempre es la salida
+                       }
+                       
+                       if (exitWarp != null)
+                       {
+                            var exitPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, new Point(exitWarp.X, exitWarp.Y), 5000, 2);
+                            if (exitPath == null || exitPath.Count == 0)
+                                 exitPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(exitWarp.X, exitWarp.Y), npc.currentLocation, 10000, npc);
+                            
+                            if (exitPath != null && exitPath.Count > 0)
+                            {
+                                 _logger.Log($"[ActionController] Ruta de salida encontrada: {exitPath.Count} pasos hacia warp {new Point(exitWarp.X, exitWarp.Y)}", LogLevel.Info);
+                                 _npcStartMap = npc.currentLocation.NameOrUniqueName;
+                                 npc.controller = new PathFindController(exitPath, npc, npc.currentLocation)
+                                 {
+                                      finalFacingDirection = 2,
+                                      endBehaviorFunction = (c, l) => {
+                                           _logger.Log($"[ActionController] NPC llegó al warp de salida del edificio. Saliendo a {exitWarp.TargetName}...", LogLevel.Info);
+                                           Game1.warpCharacter(npc, exitWarp.TargetName, new Vector2(exitWarp.TargetX, exitWarp.TargetY));
+                                           _postWarpTicks = 15;
+                                           _postWarpAction = () => TryStartNativeRouting(npc, targetName, isReturning);
+                                      }
+                                 };
+                                 _routingGraceTicks = 10;
+                                 return true;
+                            }
+                       }
+                       
+                       // Fallback: teletransportar a la puerta del edificio en Farm
+                       _logger.Log($"[ActionController] No se pudo encontrar ruta de salida del edificio. Teletransportando a Farm.", LogLevel.Warn);
+                       var farm = Game1.getLocationFromName("Farm");
+                       if (farm != null)
+                       {
+                            foreach (var building in farm.buildings)
+                            {
+                                 if (building.indoors.Value != null && building.indoors.Value.NameOrUniqueName == npc.currentLocation.NameOrUniqueName)
+                                 {
+                                      Game1.warpCharacter(npc, "Farm", new Point(building.getPointForHumanDoor().X, building.getPointForHumanDoor().Y + 1));
+                                      _postWarpTicks = 15;
+                                      _postWarpAction = () => TryStartNativeRouting(npc, targetName, isReturning);
+                                      return true;
+                                 }
+                            }
+                       }
+                  }
+
+                  if (npc.currentLocation.NameOrUniqueName == targetMap)
+                  {
+                       _logger.Log($"[ActionController] Buscando ruta local en '{targetMap}': NPC en {npc.TilePoint} hacia {targetTile}", LogLevel.Info);
+                       
+                       // SmartPathfinder primero (respeta colisiones con vallas y objetos del jugador)
+                       var localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
+                       
+                       // Fallback a pathfinder nativo
+                       if (localPath == null || localPath.Count == 0)
+                       {
+                            _logger.Log($"[ActionController] SmartPathfinder falló. Intentando pathfinder nativo...", LogLevel.Info);
+                            localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
+                       }
 
                       if (localPath != null && localPath.Count > 0)
                       {
@@ -357,22 +428,14 @@ namespace StardewLivingValley.Services
                     _stateTimer -= Game1.currentGameTime.ElapsedGameTime.TotalMilliseconds;
                     if (_stateTimer <= 0)
                     {
-                        // Exit building if inside
-                        if (_activeNpc.currentLocation.Name.StartsWith("Coop") || _activeNpc.currentLocation.Name.StartsWith("Barn") || _activeNpc.currentLocation.Name.StartsWith("Shed") || _activeNpc.currentLocation.Name.StartsWith("SlimeHutch"))
-                        {
-                            var farm = Game1.getLocationFromName("Farm");
-                            foreach(var b in farm.buildings)
-                            {
-                                if (b.indoors.Value != null && b.indoors.Value.NameOrUniqueName == _activeNpc.currentLocation.NameOrUniqueName)
-                                {
-                                     Game1.warpCharacter(_activeNpc, "Farm", new Point(b.getPointForHumanDoor().X, b.getPointForHumanDoor().Y + 1));
-                                     break;
-                                }
-                            }
-                        }
+                        // Escanear el interior del edificio para reportar datos REALES
+                        _inspectionReport = ScanBuildingInterior(_activeNpc.currentLocation);
+                        _logger.Log($"[ActionController] Reporte de inspección: {_inspectionReport}", LogLevel.Info);
 
-                        _logger.Log($"[ActionController] Inspección terminada. Calculando ruta de regreso a {_originalPlayerMap}.", LogLevel.Info);
+                        _logger.Log($"[ActionController] Inspección terminada. Calculando ruta de regreso.", LogLevel.Info);
                         _currentState = ActionState.WalkingBack;
+                        
+                        // TryStartNativeRouting ahora detecta interiores y sale caminando por el warp
                         if (!TryStartNativeRouting(_activeNpc, _originalPlayerMap, true))
                         {
                             _logger.Log($"[ActionController] No se pudo volver. Guardando memoria.", LogLevel.Warn);
@@ -423,6 +486,85 @@ namespace StardewLivingValley.Services
                  _activeNpc.checkSchedule(Game1.timeOfDay); // Resume regular schedule
             }
             _activeNpc = null;
+        }
+
+        private bool IsInsideFarmBuilding(GameLocation location)
+        {
+            if (location == null) return false;
+            
+            // Verificar si es un AnimalHouse (Coop, Barn) u otro interior de edificio de granja
+            if (location is StardewValley.AnimalHouse) return true;
+            
+            // Verificar por nombre (Shed, SlimeHutch, etc.)
+            string name = location.Name ?? "";
+            if (name.StartsWith("Shed") || name.StartsWith("SlimeHutch")) return true;
+            
+            // Verificar si la ubicación pertenece a un edificio de Farm
+            var farm = Game1.getLocationFromName("Farm");
+            if (farm != null)
+            {
+                foreach (var building in farm.buildings)
+                {
+                    if (building.indoors.Value != null && building.indoors.Value.NameOrUniqueName == location.NameOrUniqueName)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private string ScanBuildingInterior(GameLocation location)
+        {
+            if (location == null) return "No pude ver nada.";
+
+            string report = "";
+            
+            // Escanear animales reales del juego
+            if (location is StardewValley.AnimalHouse animalHouse)
+            {
+                var animals = animalHouse.animals.Values.ToList();
+                if (animals.Count == 0)
+                {
+                    report = $"Revisé el {_targetLocationName} y no había ningún animal dentro.";
+                }
+                else
+                {
+                    // Agrupar animales por tipo
+                    var grouped = new Dictionary<string, int>();
+                    foreach (var animal in animals)
+                    {
+                        string type = animal.type.Value ?? "Desconocido";
+                        if (grouped.ContainsKey(type))
+                            grouped[type]++;
+                        else
+                            grouped[type] = 1;
+                    }
+                    
+                    var details = new List<string>();
+                    foreach (var kvp in grouped)
+                    {
+                        details.Add($"{kvp.Value} {kvp.Key}");
+                    }
+                    
+                    report = $"Revisé el {_targetLocationName}. Encontré {animals.Count} animal(es): {string.Join(", ", details)}.";
+                    
+                    // Verificar si alguno necesita ser acariciado
+                    int needsPetting = animals.Count(a => !a.wasPet.Value);
+                    if (needsPetting > 0)
+                    {
+                        report += $" {needsPetting} de ellos no han sido acariciados hoy.";
+                    }
+                }
+            }
+            else
+            {
+                // Para Shed u otros edificios, reportar objetos
+                int objectCount = location.objects.Count();
+                report = $"Revisé el {_targetLocationName}. Hay {objectCount} objetos dentro.";
+            }
+            
+            return report;
         }
     }
 }

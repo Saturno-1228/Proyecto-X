@@ -37,6 +37,7 @@ namespace StardewLivingValley
             var observationEngine = new ObservationEngine(this.Monitor, helper.DirectoryPath);
             _actionController = new NPCActionController(this.Monitor, helper);
             _actionController.SetMemoryService(memoryService);
+            _actionController.SetObservationEngine(observationEngine);
             
             _interactionManager = new InteractionManager(this.Monitor, veniceApi, memoryService, contextBuilder, topicRouter, observationEngine, _actionController);
             _interactionManager.RegisterReopenCallback(ReopenDialogue);
@@ -155,9 +156,13 @@ namespace StardewLivingValley
             _activeMenu = new StardewLivingValley.UI.NPCDialogueMenu(_activeNpc, _emotionService!, OnMessageSubmitted);
             Game1.activeClickableMenu = _activeMenu;
             
+            // Pasar el reporte de inspección como contexto del sistema para la IA
             _interactionManager?.StartInteraction(_activeNpc, _activeMenu, "");
             _activeMenu.ReceiveAiResponse("...");
-            _interactionManager?.HandleChatAsync(initialMessage);
+            
+            // Enviar el reporte como mensaje del "sistema" para que la IA responda basándose en datos reales
+            string contextMessage = $"[SISTEMA: Acabas de regresar de una misión de inspección. {initialMessage} Ahora cuéntale al jugador lo que encontraste de forma natural y breve, usando tu personalidad.]";
+            _interactionManager?.HandleChatAsync(contextMessage);
         }
     }
 }
