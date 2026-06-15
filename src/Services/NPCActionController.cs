@@ -38,6 +38,9 @@ namespace StardewLivingValley.Services
         private Action? _postWarpAction = null;
         private int _routingGraceTicks = 0;
 
+        // Detección de warps automáticos del engine
+        private string _npcStartMap = "";
+
         public NPCActionController(IMonitor logger, IModHelper helper)
         {
             _logger = logger;
@@ -141,6 +144,7 @@ namespace StardewLivingValley.Services
                       if (localPath != null && localPath.Count > 0)
                       {
                            _logger.Log($"[ActionController] Ruta local encontrada: {localPath.Count} pasos.", LogLevel.Info);
+                           _npcStartMap = npc.currentLocation.NameOrUniqueName;
                            npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
                            {
                                 finalFacingDirection = 2,
@@ -186,6 +190,7 @@ namespace StardewLivingValley.Services
                       if (pathDescription != null && pathDescription.route != null && pathDescription.route.Count > 0)
                       {
                            npc.DirectionsToNewLocation = pathDescription;
+                           _npcStartMap = npc.currentLocation.NameOrUniqueName;
                            npc.controller = new PathFindController(pathDescription.route, npc, npc.currentLocation)
                            {
                                 finalFacingDirection = pathDescription.facingDirection,
@@ -208,6 +213,7 @@ namespace StardewLivingValley.Services
                            if (routeToWarp != null && routeToWarp.Count > 0)
                            {
                                 _logger.Log($"[ActionController] Caminando al warp en {new Point(directWarp.X, directWarp.Y)} para cruzar a {targetMap}.", LogLevel.Info);
+                                _npcStartMap = npc.currentLocation.NameOrUniqueName;
                                 npc.controller = new PathFindController(routeToWarp, npc, npc.currentLocation)
                                 {
                                      finalFacingDirection = 2,
@@ -309,15 +315,41 @@ namespace StardewLivingValley.Services
                 case ActionState.WalkingToTarget:
                      if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
                      {
-                         _logger.Log($"[ActionController] WalkingToTarget: controller es null. NPC en '{_activeNpc.currentLocation?.NameOrUniqueName}' tile {_activeNpc.TilePoint}. Llamando OnRouteFinished.", LogLevel.Warn);
-                         OnRouteFinished(_activeNpc, _activeNpc.currentLocation);
+                         string currentMap = _activeNpc.currentLocation?.NameOrUniqueName ?? "";
+                         
+                         // ¿El engine warpeó al NPC automáticamente al pisar un warp tile?
+                         if (!string.IsNullOrEmpty(_npcStartMap) && currentMap != _npcStartMap && !string.IsNullOrEmpty(currentMap))
+                         {
+                             _logger.Log($"[ActionController] Warp automático detectado: {_npcStartMap} → {currentMap}. Re-enrutando hacia {_targetLocationName}...", LogLevel.Info);
+                             _npcStartMap = currentMap;
+                             _postWarpTicks = 15;
+                             _postWarpAction = () => TryStartNativeRouting(_activeNpc!, _targetLocationName, false);
+                         }
+                         else
+                         {
+                             _logger.Log($"[ActionController] WalkingToTarget: controller es null. NPC en '{currentMap}' tile {_activeNpc.TilePoint}. Llamando OnRouteFinished.", LogLevel.Warn);
+                             OnRouteFinished(_activeNpc, _activeNpc.currentLocation!);
+                         }
                      }
                      break;
 
                 case ActionState.WalkingBack:
                      if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
                      {
-                         OnRouteFinished(_activeNpc, _activeNpc.currentLocation);
+                         string currentMapBack = _activeNpc.currentLocation?.NameOrUniqueName ?? "";
+                         
+                         // ¿El engine warpeó al NPC automáticamente al pisar un warp tile?
+                         if (!string.IsNullOrEmpty(_npcStartMap) && currentMapBack != _npcStartMap && !string.IsNullOrEmpty(currentMapBack))
+                         {
+                             _logger.Log($"[ActionController] Warp automático (regreso) detectado: {_npcStartMap} → {currentMapBack}. Re-enrutando hacia {_originalPlayerMap}...", LogLevel.Info);
+                             _npcStartMap = currentMapBack;
+                             _postWarpTicks = 15;
+                             _postWarpAction = () => TryStartNativeRouting(_activeNpc!, _originalPlayerMap, true);
+                         }
+                         else
+                         {
+                             OnRouteFinished(_activeNpc, _activeNpc.currentLocation!);
+                         }
                      }
                      break;
 
