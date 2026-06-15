@@ -34,6 +34,7 @@ namespace StardewLivingValley.Services
         private Point _originalPlayerTile;
         private double _stateTimer = 0;
         private string _inspectionReport = "";
+        private bool _originalDestroyObjects = true;
 
         // Sistema de estabilización post-warp
         private int _postWarpTicks = 0;
@@ -82,6 +83,9 @@ namespace StardewLivingValley.Services
 
             _currentState = ActionState.WalkingToTarget;
             _stateTimer = 0;
+            // Proteger objetos del jugador (aspersores, máquinas, etc.) durante la misión
+            _originalDestroyObjects = npc.willDestroyObjectsUnderfoot;
+            npc.willDestroyObjectsUnderfoot = false;
             
             _logger.Log($"[ActionController] {npc.Name} inicia inspección hacia {_targetLocationName}. Origen: {npc.currentLocation.NameOrUniqueName}", LogLevel.Info);
 
@@ -271,6 +275,54 @@ namespace StardewLivingValley.Services
                       }
                       
                       _logger.Log($"[ActionController] No se encontró ruta nativa hacia {targetMap} desde {npc.currentLocation.NameOrUniqueName}. Usando fallback...", LogLevel.Warn);
+                       
+                       // Caso especial: Farm → FarmHouse (la puerta no es un warp regular, es una BuildingDoor)
+                       if (targetMap == "FarmHouse" && npc.currentLocation.Name == "Farm")
+                       {
+                            _logger.Log($"[ActionController] Caso especial Farm→FarmHouse. Buscando puerta del edificio...", LogLevel.Info);
+                            var farmHouseLoc = Game1.getLocationFromName("FarmHouse");
+                            if (farmHouseLoc != null)
+                            {
+                                 // Buscar el warp DE SALIDA del FarmHouse (apunta a Farm) para saber dónde está la puerta en Farm
+                                 Point farmDoorOnFarm = new Point(64, 15); // Posición por defecto
+                                 foreach (var w in farmHouseLoc.warps)
+                                 {
+                                      if (w.TargetName == "Farm")
+                                      {
+                                           farmDoorOnFarm = new Point(w.TargetX, w.TargetY);
+                                           _logger.Log($"[ActionController] Puerta de FarmHouse en Farm encontrada en {farmDoorOnFarm}", LogLevel.Info);
+                                           break;
+                                      }
+                                 }
+                                 
+                                 var pathToDoor = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, farmDoorOnFarm, 30000, 3);
+                                 if (pathToDoor == null || pathToDoor.Count == 0)
+                                      pathToDoor = PathFindController.findPathForNPCSchedules(npc.TilePoint, farmDoorOnFarm, npc.currentLocation, 50000, npc);
+                                 
+                                 if (pathToDoor != null && pathToDoor.Count > 0)
+                                 {
+                                      _logger.Log($"[ActionController] Ruta a puerta de FarmHouse: {pathToDoor.Count} pasos.", LogLevel.Info);
+                                      _npcStartMap = npc.currentLocation.NameOrUniqueName;
+                                      npc.controller = new PathFindController(pathToDoor, npc, npc.currentLocation)
+                                      {
+                                           finalFacingDirection = 0,
+                                           endBehaviorFunction = (c, l) => {
+                                                _logger.Log($"[ActionController] NPC llegó a la puerta de FarmHouse. Entrando...", LogLevel.Info);
+                                                var fh = Game1.getLocationFromName("FarmHouse") as FarmHouse;
+                                                Point entry = fh?.getEntryLocation() ?? new Point(27, 30);
+                                                Game1.warpCharacter(npc, "FarmHouse", entry);
+                                                _postWarpTicks = 15;
+                                                _postWarpAction = () => TryStartNativeRouting(npc, targetName, isReturning);
+                                           }
+                                      };
+                                      return true;
+                                 }
+                                 else
+                                 {
+                                      _logger.Log($"[ActionController] No se encontró ruta a la puerta de FarmHouse en {farmDoorOnFarm}.", LogLevel.Warn);
+                                 }
+                            }
+                       }
                       
                       // Fallback 1: Buscar warp directo
                       Warp? directWarp = null;
@@ -481,6 +533,8 @@ namespace StardewLivingValley.Services
             
             if (_activeNpc != null)
             {
+                 // Restaurar la propiedad de destrucción de objetos
+                 _activeNpc.willDestroyObjectsUnderfoot = _originalDestroyObjects;
                  _activeNpc.DirectionsToNewLocation = null;
                  _activeNpc.controller = null;
                  _activeNpc.checkSchedule(Game1.timeOfDay); // Resume regular schedule
