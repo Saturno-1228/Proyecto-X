@@ -27,12 +27,16 @@ namespace StardewLivingValley.Services
         private NPC? _activeNpc;
         private string _targetLocationName = "";
         private Action? _onCompleteCallback;
-        private Action? _pendingRouting;
         private MemoryService? _memoryService;
         
         private string _originalPlayerMap = "";
         private Point _originalPlayerTile;
         private double _stateTimer = 0;
+
+        // Sistema de estabilización post-warp
+        private int _postWarpTicks = 0;
+        private Action? _postWarpAction = null;
+        private int _routingGraceTicks = 0;
 
         public NPCActionController(IMonitor logger, IModHelper helper)
         {
@@ -124,31 +128,25 @@ namespace StardewLivingValley.Services
             {
                  if (npc.currentLocation.NameOrUniqueName == targetMap)
                  {
-                      List<Point> localPath = null;
-                      if (npc.currentLocation.Name == "Farm")
-                      {
-                           _logger.Log($"[ActionController] En Farm: Usando SmartPathfinder preferente...", LogLevel.Info);
-                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 30000, 3);
-                      }
-                      else
-                      {
-                           localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
-                      }
+                      _logger.Log($"[ActionController] Buscando ruta local en '{targetMap}': NPC en {npc.TilePoint} hacia {targetTile}", LogLevel.Info);
+                      var localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
                       
                       // Fallback a SmartPathfinder
                       if (localPath == null || localPath.Count == 0)
                       {
-                           if (npc.currentLocation.Name != "Farm") _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
-                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 20000, 3);
+                           _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
+                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
                       }
 
                       if (localPath != null && localPath.Count > 0)
                       {
+                           _logger.Log($"[ActionController] Ruta local encontrada: {localPath.Count} pasos.", LogLevel.Info);
                            npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
                            {
                                 finalFacingDirection = 2,
                                 endBehaviorFunction = OnRouteFinished
                            };
+                           _routingGraceTicks = 10;
                       }
                       else
                       {
@@ -206,26 +204,21 @@ namespace StardewLivingValley.Services
                       
                       if (directWarp != null) 
                       {
-                           List<Point> routeToWarp = null;
-                           if (npc.currentLocation.Name == "Farm")
-                           {
-                               routeToWarp = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, new Point(directWarp.X, directWarp.Y), 30000, 3);
-                           }
-                           else
-                           {
-                               routeToWarp = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(directWarp.X, directWarp.Y), npc.currentLocation, 30000, npc);
-                           }
+                           var routeToWarp = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(directWarp.X, directWarp.Y), npc.currentLocation, 30000, npc);
                            if (routeToWarp != null && routeToWarp.Count > 0)
                            {
-                               npc.controller = new PathFindController(routeToWarp, npc, npc.currentLocation)
-                               {
-                                    finalFacingDirection = 2,
-                                    endBehaviorFunction = (c, l) => {
-                                         Game1.warpCharacter(npc, targetMap, new Vector2(directWarp.TargetX, directWarp.TargetY));
-                                         _pendingRouting = () => TryStartNativeRouting(npc, targetName, isReturning);
-                                    }
-                               };
-                               return true;
+                                _logger.Log($"[ActionController] Caminando al warp en {new Point(directWarp.X, directWarp.Y)} para cruzar a {targetMap}.", LogLevel.Info);
+                                npc.controller = new PathFindController(routeToWarp, npc, npc.currentLocation)
+                                {
+                                     finalFacingDirection = 2,
+                                     endBehaviorFunction = (c, l) => {
+                                          _logger.Log($"[ActionController] NPC llegó al warp. Teletransportando a {targetMap}...", LogLevel.Info);
+                                          Game1.warpCharacter(npc, targetMap, new Vector2(directWarp.TargetX, directWarp.TargetY));
+                                          _postWarpTicks = 15;
+                                          _postWarpAction = () => TryStartNativeRouting(npc, targetName, isReturning);
+                                     }
+                                };
+                                return true;
                            }
                       }
                       
@@ -240,7 +233,8 @@ namespace StardewLivingValley.Services
                            else if (targetMap == "FarmHouse") warpPoint = (targetGameLoc as FarmHouse)?.getEntryLocation() ?? warpPoint;
                            
                            Game1.warpCharacter(npc, targetMap, warpPoint);
-                           TryStartNativeRouting(npc, targetName, isReturning);
+                           _postWarpTicks = 15;
+                           _postWarpAction = () => TryStartNativeRouting(npc, targetName, isReturning);
                            return true;
                       }
                  }
@@ -287,11 +281,25 @@ namespace StardewLivingValley.Services
 
         private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
         {
-            if (_pendingRouting != null)
+            // Estabilización post-warp: esperar a que el motor procese el cambio de mapa
+            if (_postWarpTicks > 0)
             {
-                var routing = _pendingRouting;
-                _pendingRouting = null;
-                routing();
+                _postWarpTicks--;
+                if (_postWarpTicks == 0 && _postWarpAction != null)
+                {
+                    var action = _postWarpAction;
+                    _postWarpAction = null;
+                    _logger.Log($"[ActionController] Post-warp estabilizado. NPC en '{_activeNpc?.currentLocation?.NameOrUniqueName}' tile {_activeNpc?.TilePoint}. Ejecutando ruta local...", LogLevel.Info);
+                    action();
+                }
+                return; // No verificar estado durante estabilización
+            }
+
+            // Período de gracia: no verificar controller==null justo después de asignar uno nuevo
+            if (_routingGraceTicks > 0)
+            {
+                _routingGraceTicks--;
+                return;
             }
 
             if (_currentState == ActionState.Idle || _activeNpc == null) return;
@@ -301,6 +309,7 @@ namespace StardewLivingValley.Services
                 case ActionState.WalkingToTarget:
                      if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
                      {
+                         _logger.Log($"[ActionController] WalkingToTarget: controller es null. NPC en '{_activeNpc.currentLocation?.NameOrUniqueName}' tile {_activeNpc.TilePoint}. Llamando OnRouteFinished.", LogLevel.Warn);
                          OnRouteFinished(_activeNpc, _activeNpc.currentLocation);
                      }
                      break;
