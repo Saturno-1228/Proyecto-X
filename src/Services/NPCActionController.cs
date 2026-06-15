@@ -124,13 +124,22 @@ namespace StardewLivingValley.Services
             {
                  if (npc.currentLocation.NameOrUniqueName == targetMap)
                  {
-                      var localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
+                      List<Point> localPath = null;
+                      if (npc.currentLocation.Name == "Farm")
+                      {
+                           _logger.Log($"[ActionController] En Farm: Usando SmartPathfinder preferente...", LogLevel.Info);
+                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 30000, 3);
+                      }
+                      else
+                      {
+                           localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
+                      }
                       
                       // Fallback a SmartPathfinder
                       if (localPath == null || localPath.Count == 0)
                       {
-                           _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
-                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
+                           if (npc.currentLocation.Name != "Farm") _logger.Log($"[ActionController] Ruta nativa local falló. Usando SmartPathfinder...", LogLevel.Info);
+                           localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 20000, 3);
                       }
 
                       if (localPath != null && localPath.Count > 0)
@@ -197,7 +206,15 @@ namespace StardewLivingValley.Services
                       
                       if (directWarp != null) 
                       {
-                           var routeToWarp = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(directWarp.X, directWarp.Y), npc.currentLocation, 30000, npc);
+                           List<Point> routeToWarp = null;
+                           if (npc.currentLocation.Name == "Farm")
+                           {
+                               routeToWarp = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, new Point(directWarp.X, directWarp.Y), 30000, 3);
+                           }
+                           else
+                           {
+                               routeToWarp = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(directWarp.X, directWarp.Y), npc.currentLocation, 30000, npc);
+                           }
                            if (routeToWarp != null && routeToWarp.Count > 0)
                            {
                                npc.controller = new PathFindController(routeToWarp, npc, npc.currentLocation)
