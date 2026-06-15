@@ -1,30 +1,43 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Pathfinding;
+using StardewValley.TerrainFeatures;
 
 namespace StardewLivingValley.Services
 {
+    /// <summary>
+    /// Pathfinder A* optimizado que detecta TODOS los tipos de obstáculos del juego.
+    /// Encuentra la ruta más corta y natural, evitando objetos del jugador, edificios,
+    /// árboles, muebles y cualquier otra obstrucción.
+    /// </summary>
     public static class SmartPathfinder
     {
         /// <summary>
-        /// Busca una ruta usando A* hiper-optimizado. Si el destino está bloqueado, encuentra el punto caminable más cercano.
+        /// Busca la ruta óptima usando A* con detección exhaustiva de obstáculos.
+        /// Si el destino está bloqueado, encuentra el punto caminable más cercano.
         /// </summary>
         public static Stack<Point>? FindPath(NPC npc, GameLocation location, Point startTile, Point targetTile, int maxIterations = 15000, int toleranceRadius = 3)
         {
             if (location == null || npc == null) return null;
 
+            int width = location.Map.Layers[0].LayerWidth;
+            int height = location.Map.Layers[0].LayerHeight;
+
+            // Pre-calcular caché de walkability para todo el área relevante
+            // Esto evita recalcular colisiones costosas múltiples veces por tile
+            var walkableCache = new Dictionary<Point, bool>();
+
             // 1. Corrección de Objetivo (Búsqueda Radial Previa)
-            Point actualTarget = GetClosestWalkableTile(npc, location, targetTile, toleranceRadius);
+            Point actualTarget = GetClosestWalkableTile(npc, location, targetTile, toleranceRadius, walkableCache, width, height);
             
-            // Si no hay ningún tile libre cerca, es inalcanzable.
             if (actualTarget.X == -1 && actualTarget.Y == -1)
             {
-                return null;
+                return null; // Inalcanzable
             }
 
-            // Si ya estamos allí, retornamos una ruta trivial.
             if (startTile == actualTarget)
             {
                 var stack = new Stack<Point>();
@@ -32,36 +45,29 @@ namespace StardewLivingValley.Services
                 return stack;
             }
 
-            // 2. A* Optimizado (Síncrono)
-            int width = location.Map.Layers[0].LayerWidth;
-            int height = location.Map.Layers[0].LayerHeight;
-
-            var openSet = new PriorityQueue<Point, int>();
+            // 2. A* con tie-breaking para rutas más naturales
+            var openSet = new PriorityQueue<Point, long>();
             var cameFrom = new Dictionary<Point, Point>();
             var gScore = new Dictionary<Point, int>();
-            
-            // Acceso O(1) rápido a la lista cerrada
             var closedSet = new bool[width, height];
 
-            openSet.Enqueue(startTile, Heuristic(startTile, actualTarget));
             gScore[startTile] = 0;
+            long startPriority = CalculatePriority(0, Heuristic(startTile, actualTarget), startTile, startTile, actualTarget);
+            openSet.Enqueue(startTile, startPriority);
 
             int iterations = 0;
-            Point[] neighbors = new Point[]
+            Point[] directions = new Point[]
             {
-                new Point(0, -1), // Arriba
-                new Point(0, 1),  // Abajo
-                new Point(-1, 0), // Izquierda
-                new Point(1, 0)   // Derecha
+                new Point(0, -1),  // Arriba
+                new Point(0, 1),   // Abajo
+                new Point(-1, 0),  // Izquierda
+                new Point(1, 0)    // Derecha
             };
 
             while (openSet.Count > 0)
             {
                 if (iterations++ > maxIterations)
-                {
-                    // Límite de seguridad alcanzado (evita colgar el juego)
                     break;
-                }
 
                 Point current = openSet.Dequeue();
                 
@@ -70,9 +76,11 @@ namespace StardewLivingValley.Services
                     return ReconstructPath(cameFrom, current);
                 }
 
+                if (closedSet[current.X, current.Y])
+                    continue;
                 closedSet[current.X, current.Y] = true;
 
-                foreach (var dir in neighbors)
+                foreach (var dir in directions)
                 {
                     Point neighbor = new Point(current.X + dir.X, current.Y + dir.Y);
 
@@ -83,8 +91,8 @@ namespace StardewLivingValley.Services
                     if (closedSet[neighbor.X, neighbor.Y])
                         continue;
 
-                    // Colisión
-                    if (!IsTileWalkable(location, neighbor, npc))
+                    // Verificar walkability con caché
+                    if (!IsWalkableCached(location, neighbor, npc, walkableCache, width, height))
                         continue;
 
                     int tentative_gScore = gScore[current] + 1;
@@ -93,19 +101,39 @@ namespace StardewLivingValley.Services
                     {
                         cameFrom[neighbor] = current;
                         gScore[neighbor] = tentative_gScore;
-                        int fScore = tentative_gScore + Heuristic(neighbor, actualTarget);
-                        
-                        openSet.Enqueue(neighbor, fScore);
+                        int h = Heuristic(neighbor, actualTarget);
+                        long priority = CalculatePriority(tentative_gScore, h, neighbor, startTile, actualTarget);
+                        openSet.Enqueue(neighbor, priority);
                     }
                 }
             }
 
-            return null; // Ruta no encontrada dentro del límite o bloqueada completamente
+            return null;
+        }
+
+        /// <summary>
+        /// Calcula la prioridad con tie-breaking para preferir rutas más rectas.
+        /// La prioridad principal es f = g + h. Cuando hay empate, prefiere tiles
+        /// más cercanos a la línea recta entre inicio y destino.
+        /// </summary>
+        private static long CalculatePriority(int g, int h, Point current, Point start, Point goal)
+        {
+            int f = g + h;
+            
+            // Cross product: mide cuánto se desvía el punto actual de la línea recta start→goal
+            // Un valor más bajo = más cerca de la línea recta = ruta más natural
+            int dx1 = current.X - goal.X;
+            int dy1 = current.Y - goal.Y;
+            int dx2 = start.X - goal.X;
+            int dy2 = start.Y - goal.Y;
+            int cross = Math.Abs(dx1 * dy2 - dx2 * dy1);
+            
+            // fScore es dominante (x10000), cross solo rompe empates
+            return (long)f * 10000L + (long)cross;
         }
 
         private static int Heuristic(Point a, Point b)
         {
-            // Distancia Manhattan
             return Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
         }
 
@@ -118,11 +146,9 @@ namespace StardewLivingValley.Services
                 totalPath.Add(current);
             }
 
-            // totalPath está invertido: [Destino, PasoN, ..., Paso1, Inicio]
-            // PathFindController requiere que el próximo paso (Paso1) esté arriba (Top) del Stack, y el destino al fondo (Bottom).
+            // totalPath: [Destino, ..., Paso1, Inicio]
+            // PathFindController necesita: Top=Paso1, Bottom=Destino
             var stack = new Stack<Point>();
-            
-            // Apilamos desde el Destino hasta el Paso1
             for (int i = 0; i < totalPath.Count - 1; i++)
             {
                 stack.Push(totalPath[i]);
@@ -131,11 +157,10 @@ namespace StardewLivingValley.Services
             return stack;
         }
 
-        private static Point GetClosestWalkableTile(NPC npc, GameLocation location, Point target, int radius)
+        private static Point GetClosestWalkableTile(NPC npc, GameLocation location, Point target, int radius, Dictionary<Point, bool> cache, int mapW, int mapH)
         {
-            if (IsTileWalkable(location, target, npc)) return target;
+            if (IsWalkableCached(location, target, npc, cache, mapW, mapH)) return target;
 
-            // BFS corto para encontrar el tile libre más cercano en espiral
             var queue = new Queue<Point>();
             var visited = new HashSet<Point>();
             queue.Enqueue(target);
@@ -145,7 +170,7 @@ namespace StardewLivingValley.Services
             {
                 Point current = queue.Dequeue();
                 
-                if (IsTileWalkable(location, current, npc))
+                if (IsWalkableCached(location, current, npc, cache, mapW, mapH))
                 {
                     return current;
                 }
@@ -162,7 +187,7 @@ namespace StardewLivingValley.Services
 
                 foreach (var n in neighbors)
                 {
-                    if (visited.Add(n))
+                    if (n.X >= 0 && n.Y >= 0 && n.X < mapW && n.Y < mapH && visited.Add(n))
                     {
                         queue.Enqueue(n);
                     }
@@ -172,30 +197,135 @@ namespace StardewLivingValley.Services
             return new Point(-1, -1);
         }
 
+        /// <summary>
+        /// Wrapper con caché para evitar recalcular walkability del mismo tile.
+        /// </summary>
+        private static bool IsWalkableCached(GameLocation location, Point tile, NPC npc, Dictionary<Point, bool> cache, int mapW, int mapH)
+        {
+            if (tile.X < 0 || tile.Y < 0 || tile.X >= mapW || tile.Y >= mapH)
+                return false;
+
+            if (cache.TryGetValue(tile, out bool cached))
+                return cached;
+
+            bool walkable = IsTileWalkable(location, tile, npc);
+            cache[tile] = walkable;
+            return walkable;
+        }
+
+        /// <summary>
+        /// Verificación EXHAUSTIVA de si un tile es caminable por un NPC.
+        /// Revisa TODAS las capas de obstrucción del juego.
+        /// </summary>
         private static bool IsTileWalkable(GameLocation location, Point tile, NPC npc)
         {
+            // ═══════════════════════════════════════════════════════
+            // 1. CAPA ESTÁTICA DEL MAPA (agua, paredes, bordes)
+            // ═══════════════════════════════════════════════════════
             var xLocation = new xTile.Dimensions.Location(tile.X * Game1.tileSize + Game1.tileSize / 2, tile.Y * Game1.tileSize + Game1.tileSize / 2);
-            
-            // Capa estática del mapa (ej. agua, bordes del mapa)
             if (!location.isTilePassable(xLocation, Game1.viewport))
             {
                 return false;
             }
 
-            // Proteger objetos colocados por el jugador (aspersores, máquinas, etc.)
-            // Sin esto, el NPC caminará sobre ellos y los destruirá.
+            // ═══════════════════════════════════════════════════════
+            // 2. OBJETOS DEL JUGADOR (aspersores, cofres, máquinas, vallas, etc.)
+            // ═══════════════════════════════════════════════════════
             Vector2 tileVec = new Vector2(tile.X, tile.Y);
             if (location.objects.ContainsKey(tileVec))
             {
                 return false;
             }
 
-            // Caja de colisión para objetos físicos (vallas, árboles, cofres, edificios)
-            // Se usa un rectángulo ligeramente más pequeño (48x48) para evitar fricciones innecesarias en bordes.
-            Rectangle boundingBox = new Rectangle(tile.X * Game1.tileSize + 8, tile.Y * Game1.tileSize + 8, 48, 48);
+            // ═══════════════════════════════════════════════════════
+            // 3. TERRAIN FEATURES (árboles, árboles frutales, tocones)
+            // ═══════════════════════════════════════════════════════
+            if (location.terrainFeatures.ContainsKey(tileVec))
+            {
+                var feature = location.terrainFeatures[tileVec];
+                // Árboles y árboles frutales bloquean el paso completamente
+                if (feature is Tree || feature is FruitTree)
+                {
+                    return false;
+                }
+                // Grass, HoeDirt (cultivos), Flooring son pasables — no bloquear
+            }
 
-            // isCharacter = true asegura que verifique todas las colisiones relativas a personajes.
-            // Ignoramos la colisión con el NPC mismo.
+            // ═══════════════════════════════════════════════════════
+            // 4. RESOURCE CLUMPS (rocas grandes, troncos, meteoritos)
+            // ═══════════════════════════════════════════════════════
+            foreach (var clump in location.resourceClumps)
+            {
+                if (clump.occupiesTile(tile.X, tile.Y))
+                {
+                    return false;
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // 5. EDIFICIOS (footprints completos, excepto puerta humana)
+            // ═══════════════════════════════════════════════════════
+            if (location.buildings != null)
+            {
+                foreach (var building in location.buildings)
+                {
+                    int bx = building.tileX.Value;
+                    int by = building.tileY.Value;
+                    int bw = building.tilesWide.Value;
+                    int bh = building.tilesHigh.Value;
+
+                    // Verificar si el tile está dentro del footprint del edificio
+                    if (tile.X >= bx && tile.X < bx + bw && tile.Y >= by && tile.Y < bx + bh)
+                    {
+                        // Permitir la puerta humana (tile de entrada)
+                        Point door = building.getPointForHumanDoor();
+                        // La puerta y el tile justo debajo son caminables
+                        if ((tile.X == door.X && tile.Y == door.Y) || (tile.X == door.X && tile.Y == door.Y + 1))
+                            continue;
+                        
+                        return false;
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // 6. MUEBLES (en interiores como FarmHouse)
+            // ═══════════════════════════════════════════════════════
+            if (location.furniture != null && location.furniture.Count > 0)
+            {
+                int pixelX = tile.X * Game1.tileSize;
+                int pixelY = tile.Y * Game1.tileSize;
+                Rectangle tileRect = new Rectangle(pixelX + 4, pixelY + 4, Game1.tileSize - 8, Game1.tileSize - 8);
+                
+                foreach (var furniture in location.furniture)
+                {
+                    if (furniture.boundingBox.Value.Intersects(tileRect))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // 7. LARGE TERRAIN FEATURES (arbustos grandes)
+            // ═══════════════════════════════════════════════════════
+            if (location.largeTerrainFeatures != null)
+            {
+                foreach (var ltf in location.largeTerrainFeatures)
+                {
+                    Rectangle ltfBounds = ltf.getBoundingBox();
+                    if (ltfBounds.Contains(tile.X * Game1.tileSize + 32, tile.Y * Game1.tileSize + 32))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // 8. COLISIÓN GENERAL DEL ENGINE (último recurso)
+            //    Atrapa cualquier cosa que no hayamos cubierto arriba.
+            // ═══════════════════════════════════════════════════════
+            Rectangle boundingBox = new Rectangle(tile.X * Game1.tileSize + 8, tile.Y * Game1.tileSize + 8, 48, 48);
             if (location.isCollidingPosition(boundingBox, Game1.viewport, true, 0, false, npc))
             {
                 return false;
