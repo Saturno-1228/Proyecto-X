@@ -36,6 +36,7 @@ namespace StardewLivingValley
             _emotionService = new EmotionService(helper, this.Monitor);
             var observationEngine = new ObservationEngine(this.Monitor, helper.DirectoryPath);
             _actionController = new NPCActionController(this.Monitor, helper);
+            SmartPathfinder.SetLogger(this.Monitor);
             _actionController.SetMemoryService(memoryService);
             _actionController.SetObservationEngine(observationEngine);
             
