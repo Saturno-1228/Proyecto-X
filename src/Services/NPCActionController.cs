@@ -44,6 +44,12 @@ namespace StardewLivingValley.Services
         // Detección de warps automáticos del engine
         private string _npcStartMap = "";
 
+        // Auto-recuperación de atascos
+        private Point _lastPosition;
+        private int _ticksStuck = 0;
+        private int _maxRetries = 3;
+        private int _currentRetries = 0;
+
         public NPCActionController(IMonitor logger, IModHelper helper)
         {
             _logger = logger;
@@ -83,6 +89,10 @@ namespace StardewLivingValley.Services
 
             _currentState = ActionState.WalkingToTarget;
             _stateTimer = 0;
+            _ticksStuck = 0;
+            _currentRetries = 0;
+            _lastPosition = npc.TilePoint;
+
             // Proteger objetos del jugador (aspersores, máquinas, etc.) durante la misión
             _originalDestroyObjects = npc.willDestroyObjectsUnderfoot;
             npc.willDestroyObjectsUnderfoot = false;
@@ -406,6 +416,8 @@ namespace StardewLivingValley.Services
 
         private void OnRouteFinished(Character c, GameLocation l)
         {
+            _currentRetries = 0; // Reiniciar retries al finalizar la ruta
+
             if (_currentState == ActionState.WalkingToTarget)
             {
                  if (_activeNpc != null && _activeNpc.currentLocation.Name == "Farm")
@@ -459,6 +471,61 @@ namespace StardewLivingValley.Services
             switch (_currentState)
             {
                 case ActionState.WalkingToTarget:
+                case ActionState.WalkingBack:
+                     // Auto-recuperación de atascos
+                     if (_activeNpc.controller != null || _activeNpc.DirectionsToNewLocation != null)
+                     {
+                         if (_activeNpc.TilePoint == _lastPosition)
+                         {
+                             _ticksStuck++;
+                         }
+                         else
+                         {
+                             _lastPosition = _activeNpc.TilePoint;
+                             _ticksStuck = 0;
+                         }
+
+                         // Si está atascado por ~3 segundos (180 ticks, o digamos 60 para 1 segundo, elegimos 180 para dar tiempo a moverse un poco y no ser muy agresivos)
+                         if (_ticksStuck > 180)
+                         {
+                             _logger.Log($"[ActionController] {_activeNpc.Name} parece atascado en {_activeNpc.TilePoint} durante 3 segundos. Intentando recuperar...", LogLevel.Warn);
+
+                             _ticksStuck = 0;
+                             _activeNpc.Halt();
+                             _activeNpc.controller = null;
+                             _activeNpc.DirectionsToNewLocation = null;
+
+                             if (_currentRetries >= _maxRetries)
+                             {
+                                 _logger.Log($"[ActionController] Se superó el máximo de intentos de recuperación ({_maxRetries}). Abortando misión.", LogLevel.Error);
+                                 if (_currentState == ActionState.WalkingToTarget)
+                                 {
+                                     StoreAbandonmentMemoryBlocked("un obstáculo inamovible");
+                                 }
+                                 else
+                                 {
+                                     StoreAbandonmentMemory();
+                                 }
+                                 FinishAction();
+                                 return;
+                             }
+
+                             _currentRetries++;
+                             bool isReturning = _currentState == ActionState.WalkingBack;
+                             string target = isReturning ? _originalPlayerMap : _targetLocationName;
+
+                             _logger.Log($"[ActionController] Recalculando ruta hacia {target} (Intento {_currentRetries}/{_maxRetries})...", LogLevel.Info);
+                             if (!TryStartNativeRouting(_activeNpc, target, isReturning))
+                             {
+                                 _logger.Log($"[ActionController] Fallo fatal al recalcular tras atasco. Cancelando.", LogLevel.Error);
+                                 if (isReturning) StoreAbandonmentMemory();
+                                 else StoreAbandonmentMemoryBlocked("un camino cerrado");
+                                 FinishAction();
+                             }
+                             return;
+                         }
+                     }
+
                      if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
                      {
                          string currentMap = _activeNpc.currentLocation?.NameOrUniqueName ?? "";
@@ -466,34 +533,17 @@ namespace StardewLivingValley.Services
                          // ¿El engine warpeó al NPC automáticamente al pisar un warp tile?
                          if (!string.IsNullOrEmpty(_npcStartMap) && currentMap != _npcStartMap && !string.IsNullOrEmpty(currentMap))
                          {
-                             _logger.Log($"[ActionController] Warp automático detectado: {_npcStartMap} → {currentMap}. Re-enrutando hacia {_targetLocationName}...", LogLevel.Info);
+                             string targetMap = _currentState == ActionState.WalkingBack ? _originalPlayerMap : _targetLocationName;
+                             _logger.Log($"[ActionController] Warp automático detectado: {_npcStartMap} → {currentMap}. Re-enrutando hacia {targetMap}...", LogLevel.Info);
                              _npcStartMap = currentMap;
                              _postWarpTicks = 15;
-                             _postWarpAction = () => TryStartNativeRouting(_activeNpc!, _targetLocationName, false);
+                             _postWarpAction = () => TryStartNativeRouting(_activeNpc!, targetMap, _currentState == ActionState.WalkingBack);
                          }
                          else
                          {
-                             _logger.Log($"[ActionController] WalkingToTarget: controller es null. NPC en '{currentMap}' tile {_activeNpc.TilePoint}. Llamando OnRouteFinished.", LogLevel.Warn);
-                             OnRouteFinished(_activeNpc, _activeNpc.currentLocation!);
-                         }
-                     }
-                     break;
+                             if (_currentState == ActionState.WalkingToTarget)
+                                 _logger.Log($"[ActionController] WalkingToTarget: controller es null. NPC en '{currentMap}' tile {_activeNpc.TilePoint}. Llamando OnRouteFinished.", LogLevel.Warn);
 
-                case ActionState.WalkingBack:
-                     if (_activeNpc.DirectionsToNewLocation == null && _activeNpc.controller == null)
-                     {
-                         string currentMapBack = _activeNpc.currentLocation?.NameOrUniqueName ?? "";
-                         
-                         // ¿El engine warpeó al NPC automáticamente al pisar un warp tile?
-                         if (!string.IsNullOrEmpty(_npcStartMap) && currentMapBack != _npcStartMap && !string.IsNullOrEmpty(currentMapBack))
-                         {
-                             _logger.Log($"[ActionController] Warp automático (regreso) detectado: {_npcStartMap} → {currentMapBack}. Re-enrutando hacia {_originalPlayerMap}...", LogLevel.Info);
-                             _npcStartMap = currentMapBack;
-                             _postWarpTicks = 15;
-                             _postWarpAction = () => TryStartNativeRouting(_activeNpc!, _originalPlayerMap, true);
-                         }
-                         else
-                         {
                              OnRouteFinished(_activeNpc, _activeNpc.currentLocation!);
                          }
                      }
