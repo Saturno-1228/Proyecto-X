@@ -157,6 +157,13 @@ namespace StardewLivingValley.Services
             if (cache.TryGetValue(tile, out bool cachedWalkable))
                 return cachedWalkable;
 
+            // Si es exactamente la baldosa donde estamos ahora, la forzamos como caminable
+            if (npc.TilePoint == tile)
+            {
+                cache[tile] = true;
+                return true;
+            }
+
             // 1. Capa estática de tiles (agua, montañas, etc.)
             var xLoc = new xTile.Dimensions.Location(tile.X * Game1.tileSize + Game1.tileSize / 2, tile.Y * Game1.tileSize + Game1.tileSize / 2);
             var viewport = new xTile.Dimensions.Rectangle(0, 0, location.Map.DisplayWidth, location.Map.DisplayHeight);
@@ -214,26 +221,150 @@ namespace StardewLivingValley.Services
                 }
             }
 
+            // 4. Verificación perimetral extra para evitar recortar bordes peligrosos
+            // Revisamos los adyacentes para detectar "medio tile" que no choque el centro pero sí al npc entero.
+            Point[] adjacents = { new Point(1, 0), new Point(-1, 0), new Point(0, 1), new Point(0, -1) };
+            foreach (var adjDir in adjacents)
+            {
+                Point adjTile = new Point(tile.X + adjDir.X, tile.Y + adjDir.Y);
+                if (adjTile.X < 0 || adjTile.Y < 0 || adjTile.X >= width || adjTile.Y >= height) continue;
+
+                Rectangle adjTileRect = new Rectangle(adjTile.X * Game1.tileSize, adjTile.Y * Game1.tileSize, Game1.tileSize, Game1.tileSize);
+                if (location.isCollidingPosition(adjTileRect, viewport, false, 0, false, null, true, false, true))
+                {
+                    // Excepción para puertas
+                    bool isDoorAreaAdj = false;
+                    foreach (var building in location.buildings)
+                    {
+                        Point door = building.getPointForHumanDoor();
+                        if (adjTile.X == door.X && (adjTile.Y == door.Y || adjTile.Y == door.Y + 1))
+                        {
+                            isDoorAreaAdj = true;
+                            break;
+                        }
+                    }
+
+                    if (!isDoorAreaAdj)
+                    {
+                        // Si hay colisión en el adyacente, revisamos si nuestro centro estaría muy cerca del borde problemático
+                        // Por simplicidad, agregamos un ligero recorte al "camino perfecto".
+                        // Específicamente, queremos asegurarnos de que no sea la Caja de Envíos u otro large obstacle.
+                        bool isBlockingEdge = false;
+
+                        // Check buildings (Shipping Bin is usually a building on Farm)
+                        if (location.buildings != null)
+                        {
+                            foreach (var building in location.buildings)
+                            {
+                                if (adjTile.X >= building.tileX.Value && adjTile.X < building.tileX.Value + building.tilesWide.Value &&
+                                    adjTile.Y >= building.tileY.Value && adjTile.Y < building.tileY.Value + building.tilesHigh.Value)
+                                {
+                                    isBlockingEdge = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Check large craftables / machines
+                        if (!isBlockingEdge)
+                        {
+                            Vector2 adjVec = new Vector2(adjTile.X, adjTile.Y);
+                            if (location.objects.TryGetValue(adjVec, out var obj) && obj.bigCraftable.Value)
+                            {
+                                isBlockingEdge = true;
+                            }
+                        }
+
+                        // Check Resource Clumps (giant boulders, stumps, etc)
+                        if (!isBlockingEdge && location.resourceClumps != null)
+                        {
+                            foreach (var clump in location.resourceClumps)
+                            {
+                                if (clump.occupiesTile(adjTile.X, adjTile.Y))
+                                {
+                                    isBlockingEdge = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Check Furniture
+                        if (!isBlockingEdge && location.furniture != null)
+                        {
+                            foreach (var f in location.furniture)
+                            {
+                                if (f.boundingBox.Value.Intersects(adjTileRect))
+                                {
+                                    isBlockingEdge = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (isBlockingEdge)
+                        {
+                            // Si choca con objeto grande en el borde, lo mejor es marcar este tile pasable como falso para evitar el recorte
+                            cache[tile] = false;
+                            return false;
+                        }
+                    }
+                }
+            }
+
             cache[tile] = true;
             return true;
         }
 
         private static int GetTileCost(GameLocation location, Point tile)
         {
+            int cost = 5; // Costo base normal
             Vector2 tileVec = new Vector2(tile.X, tile.Y);
             if (location.terrainFeatures.TryGetValue(tileVec, out var feature))
             {
                 if (feature is HoeDirt dirt)
                 {
-                    if (dirt.crop != null) return 200; // Cultivos altamente evitados
-                    return 50; // Tierra arada
+                    // Cultivos altamente evitados
+                    if (dirt.crop != null) cost += 200;
+                    else cost += 50; // Tierra arada
+                }
+                else
+                {
+                    string name = feature.GetType().Name;
+                    if (name == "Flooring" || name == "Path")
+                        cost = 1; // Priorizar caminos
+                }
+            }
+
+            // Radio de zona incómoda: buscar obstáculos alrededor
+            Point[] checks = {
+                new Point(tile.X + 1, tile.Y), new Point(tile.X - 1, tile.Y),
+                new Point(tile.X, tile.Y + 1), new Point(tile.X, tile.Y - 1)
+            };
+
+            bool foundObstacle = false;
+            foreach(var p in checks)
+            {
+                var rect = new Rectangle(p.X * Game1.tileSize, p.Y * Game1.tileSize, Game1.tileSize, Game1.tileSize);
+                var vp = new xTile.Dimensions.Rectangle(0, 0, location.Map.DisplayWidth, location.Map.DisplayHeight);
+                if (location.isCollidingPosition(rect, vp, false, 0, false, null, true, false, true))
+                {
+                    foundObstacle = true;
+                    break;
                 }
 
-                string name = feature.GetType().Name;
-                if (name == "Flooring" || name == "Path")
-                    return 1; // Priorizar caminos
+                Vector2 pv = new Vector2(p.X, p.Y);
+                if (location.objects.TryGetValue(pv, out var o) && !o.isPassable())
+                {
+                    foundObstacle = true;
+                    break;
+                }
             }
-            return 5; // Costo base normal
+            if (foundObstacle)
+            {
+                cost += 15; // Añadir un costo extra a estar adyacente a obstáculos
+            }
+
+            return cost;
         }
 
         private static Point GetClosestWalkableTile(GameLocation location, Point center, NPC npc, Dictionary<Point, bool> cache, int width, int height, int maxRadius)
