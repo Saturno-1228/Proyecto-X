@@ -161,7 +161,8 @@ namespace StardewLivingValley.Services
                        
                        if (exitWarp != null)
                        {
-                            var exitPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, new Point(exitWarp.X, exitWarp.Y), 5000, 2);
+                            var exitResult = AdvancedPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, new Point(exitWarp.X, exitWarp.Y), 5000);
+                            var exitPath = exitResult.Path;
                             if (exitPath == null || exitPath.Count == 0)
                                  exitPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, new Point(exitWarp.X, exitWarp.Y), npc.currentLocation, 10000, npc);
                             
@@ -206,30 +207,51 @@ namespace StardewLivingValley.Services
                   {
                        _logger.Log($"[ActionController] Buscando ruta local en '{targetMap}': NPC en {npc.TilePoint} hacia {targetTile}", LogLevel.Info);
                        
-                       // SmartPathfinder primero (respeta colisiones con vallas y objetos del jugador)
-                       var localPath = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 15000, 3);
-                       
-                       // Fallback a pathfinder nativo
-                       if (localPath == null || localPath.Count == 0)
-                       {
-                            _logger.Log($"[ActionController] SmartPathfinder falló. Intentando pathfinder nativo...", LogLevel.Info);
-                            localPath = PathFindController.findPathForNPCSchedules(npc.TilePoint, targetTile, npc.currentLocation, 50000, npc);
-                       }
+                       // AdvancedPathfinder reemplaza la lógica anticuada de colisiones por físicas nativas
+                       var pathResult = AdvancedPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, targetTile, 10000);
+                       var localPath = pathResult.Path;
 
-                      if (localPath != null && localPath.Count > 0)
-                      {
-                           _logger.Log($"[ActionController] Ruta local encontrada: {localPath.Count} pasos.", LogLevel.Info);
-                           _npcStartMap = npc.currentLocation.NameOrUniqueName;
-                           npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
+                       if (localPath != null && localPath.Count > 0)
+                       {
+                           if (pathResult.IsPartial)
                            {
-                                finalFacingDirection = 2,
-                                endBehaviorFunction = OnRouteFinished
-                           };
-                           _routingGraceTicks = 10;
+                                _logger.Log($"[ActionController] Ruta local PARCIAL encontrada. Destino bloqueado.", LogLevel.Warn);
+                                _npcStartMap = npc.currentLocation.NameOrUniqueName;
+                                npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
+                                {
+                                     finalFacingDirection = 2,
+                                     endBehaviorFunction = (c, l) => {
+                                         // Al llegar al punto parcial, escaneamos qué lo bloquea mirando hacia el objetivo original
+                                         string obstacle = AdvancedPathfinder.IdentifyObstacle(npc.currentLocation, targetTile);
+                                         _logger.Log($"[ActionController] Llegó al tope parcial. Obstáculo detectado: {obstacle}", LogLevel.Warn);
+
+                                         _currentState = ActionState.WalkingBack;
+                                         StoreAbandonmentMemoryBlocked(obstacle);
+
+                                         if (!TryStartNativeRouting(npc, _originalPlayerMap, true))
+                                         {
+                                             StoreAbandonmentMemory();
+                                             FinishAction();
+                                         }
+                                     }
+                                };
+                                _routingGraceTicks = 10;
+                           }
+                           else
+                           {
+                                _logger.Log($"[ActionController] Ruta local COMPLETA encontrada: {localPath.Count} pasos.", LogLevel.Info);
+                                _npcStartMap = npc.currentLocation.NameOrUniqueName;
+                                npc.controller = new PathFindController(localPath, npc, npc.currentLocation)
+                                {
+                                     finalFacingDirection = 2,
+                                     endBehaviorFunction = OnRouteFinished
+                                };
+                                _routingGraceTicks = 10;
+                           }
                       }
                       else
                       {
-                           _logger.Log($"[ActionController] SmartPathfinder también falló en {targetMap} hacia {targetTile}. Cancelando misión.", LogLevel.Warn);
+                           _logger.Log($"[ActionController] AdvancedPathfinder falló completamente en {targetMap} hacia {targetTile}. Cancelando misión.", LogLevel.Warn);
                            if (isReturning)
                            {
                                StoreAbandonmentMemory();
@@ -238,7 +260,7 @@ namespace StardewLivingValley.Services
                            else
                            {
                                _currentState = ActionState.WalkingBack;
-                               StoreAbandonmentMemoryBlocked();
+                               StoreAbandonmentMemoryBlocked("un misterioso bloqueo inexplicable");
                                if (!TryStartNativeRouting(npc, _originalPlayerMap, true))
                                {
                                    StoreAbandonmentMemory();
@@ -295,7 +317,8 @@ namespace StardewLivingValley.Services
                                       }
                                  }
                                  
-                                 var pathToDoor = SmartPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, farmDoorOnFarm, 30000, 3);
+                                 var resultToDoor = AdvancedPathfinder.FindPath(npc, npc.currentLocation, npc.TilePoint, farmDoorOnFarm, 30000);
+                                 var pathToDoor = resultToDoor.Path;
                                  if (pathToDoor == null || pathToDoor.Count == 0)
                                       pathToDoor = PathFindController.findPathForNPCSchedules(npc.TilePoint, farmDoorOnFarm, npc.currentLocation, 50000, npc);
                                  
@@ -515,11 +538,11 @@ namespace StardewLivingValley.Services
             }
         }
 
-        private void StoreAbandonmentMemoryBlocked()
+        private void StoreAbandonmentMemoryBlocked(string obstacleName)
         {
             if (_activeNpc != null && _memoryService != null)
             {
-                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Intenté ir a revisar {_targetLocationName} como me pediste, pero el camino estaba completamente bloqueado por obstáculos físicos y no pude pasar. Tuve que regresar.");
+                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Intenté ir a revisar {_targetLocationName} como me pediste, pero el camino estaba completamente bloqueado por {obstacleName} y no pude pasar. Tuve que regresar de inmediato.");
             }
         }
 
