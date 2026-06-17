@@ -124,7 +124,8 @@ namespace StardewLivingValley.Services
 
             if (activeMemories != null && activeMemories.Length > 0)
             {
-                sb.AppendLine("\n--- TUS RECUERDOS RECIENTES ---");
+                sb.AppendLine("\n--- TUS RECUERDOS RECIENTES Y ASUNTOS PENDIENTES ---");
+                sb.AppendLine("REGLA CRÍTICA DE MEMORIA: Tienes información o asuntos que quedaron pendientes desde tu última interacción. Es OBLIGATORIO y de MÁXIMA PRIORIDAD que en tu respuesta actual menciones esto al jugador de forma natural e inmersiva (por ejemplo, dándole el reporte que le debías o reclamándole por irse). ¡No ignores estos recuerdos bajo ninguna circunstancia!");
                 foreach (var mem in activeMemories)
                 {
                     sb.Append("- ").AppendLine(mem);

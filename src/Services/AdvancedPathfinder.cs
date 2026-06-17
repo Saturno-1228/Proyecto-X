@@ -45,7 +45,7 @@ namespace StardewLivingValley.Services
             Point actualTarget = targetTile;
             bool isPartial = false;
 
-            if (!IsTileWalkable(location, targetTile, npc, walkableCache, width, height))
+            if (!IsTileWalkable(location, targetTile, targetTile, npc, walkableCache, width, height))
             {
                 actualTarget = GetClosestWalkableTile(location, targetTile, npc, walkableCache, width, height, 5);
                 isPartial = true;
@@ -69,7 +69,7 @@ namespace StardewLivingValley.Services
             var openSet = new PriorityQueue<Point, long>();
             var cameFrom = new Dictionary<Point, Point>();
             var gScore = new Dictionary<Point, int>();
-            var closedSet = new bool[width, height];
+            var closedSet = new HashSet<Point>();
 
             gScore[startTile] = 0;
             openSet.Enqueue(startTile, Heuristic(startTile, actualTarget));
@@ -107,8 +107,8 @@ namespace StardewLivingValley.Services
                     };
                 }
 
-                if (closedSet[current.X, current.Y]) continue;
-                closedSet[current.X, current.Y] = true;
+                if (closedSet.Contains(current)) continue;
+                closedSet.Add(current);
 
                 int currentH = Heuristic(current, actualTarget);
                 if (currentH < closestH)
@@ -121,12 +121,10 @@ namespace StardewLivingValley.Services
                 {
                     Point neighbor = new Point(current.X + dir.X, current.Y + dir.Y);
 
-                    if (neighbor.X < 0 || neighbor.Y < 0 || neighbor.X >= width || neighbor.Y >= height)
-                        continue;
-                    if (closedSet[neighbor.X, neighbor.Y])
+                    if (closedSet.Contains(neighbor))
                         continue;
 
-                    if (!IsTileWalkable(location, neighbor, npc, walkableCache, width, height))
+                    if (!IsTileWalkable(location, neighbor, actualTarget, npc, walkableCache, width, height))
                         continue;
 
                     int tentative_gScore = gScore[current] + GetTileCost(location, neighbor);
@@ -149,19 +147,45 @@ namespace StardewLivingValley.Services
             };
         }
 
-        private static bool IsTileWalkable(GameLocation location, Point tile, NPC npc, Dictionary<Point, bool> cache, int width, int height)
+        private static bool IsTileWalkable(GameLocation location, Point tile, Point targetTile, NPC npc, Dictionary<Point, bool> cache, int width, int height)
         {
-            if (tile.X < 0 || tile.Y < 0 || tile.X >= width || tile.Y >= height)
-                return false;
-
             if (cache.TryGetValue(tile, out bool cachedWalkable))
                 return cachedWalkable;
 
-            // Si es exactamente la baldosa donde estamos ahora, la forzamos como caminable
-            if (npc.TilePoint == tile)
+            // Si es exactamente la baldosa donde estamos ahora o el destino (ej. warps fuera del mapa), la forzamos
+            if (npc.TilePoint == tile || targetTile == tile)
             {
                 cache[tile] = true;
                 return true;
+            }
+
+            if (tile.X < 0 || tile.Y < 0 || tile.X >= width || tile.Y >= height)
+                return false;
+
+            // 5. Evitar pisar warps y puertas de edificios accidentalmente si no son nuestro destino o inicio
+            if (tile != targetTile && tile != npc.TilePoint)
+            {
+                foreach (var w in location.warps)
+                {
+                    if (tile.X == w.X && tile.Y == w.Y)
+                    {
+                        cache[tile] = false;
+                        return false;
+                    }
+                }
+
+                if (location.buildings != null)
+                {
+                    foreach (var b in location.buildings)
+                    {
+                        Point door = b.getPointForHumanDoor();
+                        if (tile.X == door.X && tile.Y == door.Y)
+                        {
+                            cache[tile] = false;
+                            return false;
+                        }
+                    }
+                }
             }
 
             // 1. Capa estática de tiles (agua, montañas, etc.)
@@ -180,20 +204,34 @@ namespace StardewLivingValley.Services
             // isCollidingPosition verifica: escombros, muebles, large terrain features, resource clumps y construcciones estáticas
             if (location.isCollidingPosition(tileRect, viewport, false, 0, false, null, true, false, true))
             {
-                 // EXCEPCIÓN DE PUERTAS DE EDIFICIOS:
-                 // El motor a veces marca los tiles de entrada/salida de puertas como colisivos.
+                 // EXCEPCIÓN DE PUERTAS DE EDIFICIOS Y WARPS:
+                 // El motor a veces marca los tiles de entrada/salida de puertas (o porches) como colisivos.
                  bool isDoorArea = false;
-                 foreach (var building in location.buildings)
+                 if (location.buildings != null)
                  {
-                      Point door = building.getPointForHumanDoor();
-                      // Permitimos pasar por el tile exacto de la puerta, y el tile de "aterrizaje" de warp justo abajo
-                      if (tile.X == door.X && (tile.Y == door.Y || tile.Y == door.Y + 1))
-                      {
-                           isDoorArea = true;
-                           break;
-                      }
+                     foreach (var building in location.buildings)
+                     {
+                          Point door = building.getPointForHumanDoor();
+                          // Permitimos pasar por el tile exacto de la puerta, y el tile de "aterrizaje" de warp justo abajo
+                          if (tile.X == door.X && (tile.Y == door.Y || tile.Y == door.Y + 1))
+                          {
+                               isDoorArea = true;
+                               break;
+                          }
+                     }
                  }
-
+                 if (!isDoorArea)
+                 {
+                     foreach (var w in location.warps)
+                     {
+                          // Radio ampliado para porches: 2 tiles a los lados y 2 tiles hacia abajo del warp
+                          if (tile.X >= w.X - 2 && tile.X <= w.X + 2 && (tile.Y == w.Y || tile.Y == w.Y + 1 || tile.Y == w.Y + 2))
+                          {
+                               isDoorArea = true;
+                               break;
+                          }
+                     }
+                 }
                  if (!isDoorArea)
                  {
                      cache[tile] = false;
@@ -232,26 +270,36 @@ namespace StardewLivingValley.Services
                 Rectangle adjTileRect = new Rectangle(adjTile.X * Game1.tileSize, adjTile.Y * Game1.tileSize, Game1.tileSize, Game1.tileSize);
                 if (location.isCollidingPosition(adjTileRect, viewport, false, 0, false, null, true, false, true))
                 {
-                    // Excepción para puertas
+                    // Excepción para puertas y warps
                     bool isDoorAreaAdj = false;
-                    foreach (var building in location.buildings)
+                    if (location.buildings != null)
                     {
-                        Point door = building.getPointForHumanDoor();
-                        if (adjTile.X == door.X && (adjTile.Y == door.Y || adjTile.Y == door.Y + 1))
+                        foreach (var building in location.buildings)
                         {
-                            isDoorAreaAdj = true;
-                            break;
+                            Point door = building.getPointForHumanDoor();
+                            if (adjTile.X == door.X && (adjTile.Y == door.Y || adjTile.Y == door.Y + 1))
+                            {
+                                isDoorAreaAdj = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!isDoorAreaAdj)
+                    {
+                        foreach (var w in location.warps)
+                        {
+                            if (adjTile.X >= w.X - 2 && adjTile.X <= w.X + 2 && (adjTile.Y == w.Y || adjTile.Y == w.Y + 1 || adjTile.Y == w.Y + 2))
+                            {
+                                isDoorAreaAdj = true;
+                                break;
+                            }
                         }
                     }
 
                     if (!isDoorAreaAdj)
                     {
-                        // Si hay colisión en el adyacente, revisamos si nuestro centro estaría muy cerca del borde problemático
-                        // Por simplicidad, agregamos un ligero recorte al "camino perfecto".
-                        // Específicamente, queremos asegurarnos de que no sea la Caja de Envíos u otro large obstacle.
                         bool isBlockingEdge = false;
 
-                        // Check buildings (Shipping Bin is usually a building on Farm)
                         if (location.buildings != null)
                         {
                             foreach (var building in location.buildings)
@@ -259,8 +307,12 @@ namespace StardewLivingValley.Services
                                 if (adjTile.X >= building.tileX.Value && adjTile.X < building.tileX.Value + building.tilesWide.Value &&
                                     adjTile.Y >= building.tileY.Value && adjTile.Y < building.tileY.Value + building.tilesHigh.Value)
                                 {
-                                    isBlockingEdge = true;
-                                    break;
+                                    // SOLO aplicar este borde a edificios problemáticos
+                                    if (building.buildingType.Value != null && building.buildingType.Value.Contains("Shipping Bin", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        isBlockingEdge = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -269,7 +321,7 @@ namespace StardewLivingValley.Services
                         if (!isBlockingEdge)
                         {
                             Vector2 adjVec = new Vector2(adjTile.X, adjTile.Y);
-                            if (location.objects.TryGetValue(adjVec, out var obj) && obj.bigCraftable.Value)
+                            if (location.objects.TryGetValue(adjVec, out var adjObj) && adjObj.bigCraftable.Value)
                             {
                                 isBlockingEdge = true;
                             }
@@ -381,7 +433,7 @@ namespace StardewLivingValley.Services
             {
                 Point current = queue.Dequeue();
 
-                if (IsTileWalkable(location, current, npc, cache, width, height))
+                if (IsTileWalkable(location, current, center, npc, cache, width, height))
                     return current;
 
                 foreach (var dir in neighbors)

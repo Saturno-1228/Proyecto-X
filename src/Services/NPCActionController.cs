@@ -118,9 +118,10 @@ namespace StardewLivingValley.Services
 
              if (isReturning)
              {
-                 // Bug 4: Usar posición ACTUAL del jugador, no la guardada
-                 targetMap = Game1.player.currentLocation?.NameOrUniqueName ?? _originalPlayerMap;
-                 targetTile = Game1.player.TilePoint;
+                 // Reversión: el usuario pidió explícitamente que el NPC vuelva a la posición guardada
+                 // en lugar de rastrear mágicamente el movimiento actual del jugador.
+                 targetMap = _originalPlayerMap;
+                 targetTile = _originalPlayerTile;
              }
              else
              {
@@ -584,7 +585,16 @@ namespace StardewLivingValley.Services
         {
             if (_activeNpc != null && _memoryService != null)
             {
-                _memoryService.SavePlayerMemory(_activeNpc.Name, $"Fui a revisar {_targetLocationName} como me pediste, pero cuando regresé a buscarte al lugar donde te vi por última vez, ya no estabas ahí. Tuve que seguir con mis cosas.");
+                string baseMsg = $"Fui a revisar {_targetLocationName} como me pediste. ";
+                if (!string.IsNullOrEmpty(_inspectionReport))
+                {
+                    baseMsg += $"{_inspectionReport} Sin embargo, cuando regresé a buscarte al lugar donde iniciamos la charla para darte el reporte, ya te habías ido, así que tuve que seguir con mis rutinas.";
+                }
+                else
+                {
+                    baseMsg += "Pero cuando regresé a buscarte al lugar donde te vi por última vez, ya no estabas ahí. Tuve que seguir con mis cosas.";
+                }
+                _memoryService.SavePlayerMemory(_activeNpc.Name, baseMsg);
             }
         }
 
