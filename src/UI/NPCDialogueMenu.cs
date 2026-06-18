@@ -6,7 +6,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewValley;
 using StardewValley.Menus;
 using StardewModdingAPI;
-using StardewLivingValley.Services;
+using StardewLivingValley.Brain;
 
 namespace StardewLivingValley.UI
 {
@@ -17,7 +17,7 @@ namespace StardewLivingValley.UI
     public class NPCDialogueMenu : IClickableMenu
     {
         private NPC _npc;
-        private EmotionService _emotionService;
+        private LimbicSystem _LimbicSystem;
         private TextBox _textBox; // Oculto: usado solo para capturar teclado nativo
         private Action<string> _onSubmit;
         private string _aiResponseText = "";
@@ -53,11 +53,11 @@ namespace StardewLivingValley.UI
         private int _chatBoxWidth;
         private int _chatBoxHeight;
 
-        public NPCDialogueMenu(NPC npc, EmotionService emotionService, Action<string> onSubmit)
+        public NPCDialogueMenu(NPC npc, LimbicSystem LimbicSystem, Action<string> onSubmit)
             : base(0, 0, 1200, 384) // Tamaños base del DialogueBox nativo
         {
             _npc = npc;
-            _emotionService = emotionService;
+            _LimbicSystem = LimbicSystem;
             _onSubmit = onSubmit;
 
             CalculateLayout();
@@ -366,7 +366,7 @@ namespace StardewLivingValley.UI
                 Texture2D textureToDraw = _npc.Portrait;
                 
                 int frameSize = textureToDraw.Width <= 128 ? 64 : textureToDraw.Width / 2;
-                int actualFrame = _emotionService != null ? _emotionService.GetFrameForEmotion(_npc.Name, this.CurrentEmotion) : this.CurrentEmotion;
+                int actualFrame = _LimbicSystem != null ? _LimbicSystem.GetFrameForEmotion(_npc.Name, this.CurrentEmotion) : this.CurrentEmotion;
                 Rectangle sourceRect = Game1.getSourceRectForStandardTileSheet(textureToDraw, actualFrame, frameSize, frameSize);
                 
                 // --- PROTECCIÓN MATEMÁTICA CONTRA PANTALLAS ROSAS ---
