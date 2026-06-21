@@ -15,6 +15,8 @@ namespace StardewLivingValley.Brain
         public string RelationshipRule { get; set; } = "";
         public bool IsGiftCooldownActive { get; set; } = false;
         public string TimeConstraintRule { get; set; } = "";
+        public string CurrentDate { get; set; } = "";
+        public string DailySchedule { get; set; } = "";
     }
 
     public class Subconscious
@@ -105,6 +107,13 @@ namespace StardewLivingValley.Brain
                 sb.AppendLine(envState.TimeConstraintRule);
             }
 
+            if (!string.IsNullOrEmpty(envState.DailySchedule))
+            {
+                sb.AppendLine("\n--- TU AGENDA DEL DÍA ---");
+                sb.AppendLine("Aquí tienes tu horario de hoy. Eres consciente de tus actividades programadas:");
+                sb.AppendLine(envState.DailySchedule);
+            }
+
             sb.AppendLine("\n--- SOBRE EL JUGADOR ---");
             sb.Append("Nombre: ").AppendLine(playerProfile.PlayerName);
             sb.Append("Género: ").AppendLine(Game1.player != null && Game1.player.IsMale ? "Masculino" : "Femenino");
@@ -130,6 +139,86 @@ namespace StardewLivingValley.Brain
                 {
                     sb.Append("- ").AppendLine(mem);
                 }
+            }
+
+            return sb.ToString();
+        }
+
+        public string BuildDynamicSystemContextForNpc(
+            EnvironmentState envState,
+            string targetNpcName,
+            NpcKnowledgeProfile targetProfile,
+            string relationshipTie,
+            NpcPairEmotion emotions,
+            string sensoryContext,
+            string[] conversationHistory)
+        {
+            var sb = new StringBuilder(1024);
+
+            sb.AppendLine("--- ESTADO ACTUAL DEL MUNDO ---");
+            sb.Append("Clima: ").AppendLine(envState.Weather);
+            sb.Append("Hora: ").AppendLine(envState.TimeOfDay);
+            sb.Append("Ubicación: ").AppendLine(envState.CurrentLocation);
+            
+            if (!string.IsNullOrEmpty(envState.DailySchedule))
+            {
+                sb.AppendLine("\n--- TU AGENDA DEL DÍA ---");
+                sb.AppendLine("Aquí tienes tu horario de hoy. Eres consciente de hacia dónde vas y qué vas a hacer:");
+                sb.AppendLine(envState.DailySchedule);
+            }
+
+            sb.AppendLine($"\n--- ESTÁS HABLANDO CON {targetNpcName.ToUpper()} ---");
+            sb.AppendLine("TIPO DE RELACIÓN: " + relationshipTie);
+            sb.AppendLine("PERFIL DE " + targetNpcName + ":");
+            if (targetProfile != null)
+            {
+                sb.AppendLine("Rol: " + targetProfile.Role);
+                sb.AppendLine("Personalidad: " + targetProfile.Persona);
+                sb.AppendLine("Estilo de Habla: " + targetProfile.Speech);
+                sb.AppendLine("Lazos Familiares: " + targetProfile.Ties);
+                sb.AppendLine("Límites: " + targetProfile.Boundaries);
+            }
+            else
+            {
+                sb.AppendLine("Un aldeano de Stardew Valley.");
+            }
+
+            sb.AppendLine("\n--- TU ESTADO EMOCIONAL ACTUAL CON ESTA PERSONA ---");
+            sb.AppendLine($"- Amistad (0-100): {emotions.Friendship}");
+            sb.AppendLine($"- Confianza (0-100): {emotions.Trust}");
+            sb.AppendLine($"- Enojo (0-100): {emotions.Anger}");
+            sb.AppendLine($"- Incomodidad (0-100): {emotions.Awkwardness}");
+            sb.AppendLine($"- Familiaridad (0-100): {emotions.Familiarity}");
+            
+            if (!string.IsNullOrWhiteSpace(sensoryContext))
+            {
+                sb.AppendLine("\n--- ENTORNO INMEDIATO ---");
+                sb.AppendLine(sensoryContext);
+            }
+
+            sb.AppendLine("\n--- INSTRUCCIONES DE RESPUESTA PARA ESTE TURNO ---");
+            sb.AppendLine("1. Genera UNA SOLA LÍNEA de diálogo, natural y acorde a tu personalidad y la relación con " + targetNpcName + ".");
+            sb.AppendLine("2. SI APRENDISTE ALGO NUEVO sobre " + targetNpcName + " en este chat, DEBES devolver un JSON que contenga 'response', 'memories_learned' (array de strings, máximo 1 o 2 cosas), y 'emotion_deltas' (diccionario con cambios emocionales como 'friendship': 1).");
+            sb.AppendLine("Ejemplo de salida esperada:");
+            sb.AppendLine("{");
+            sb.AppendLine("  \"response\": \"[1] ¡Qué alegría verte! ¿Cómo ha estado tu día?\",");
+            sb.AppendLine("  \"memories_learned\": [],");
+            sb.AppendLine("  \"emotion_deltas\": { \"friendship\": 1 }");
+            sb.AppendLine("}");
+            sb.AppendLine("DEBES RESPONDER EXCLUSIVAMENTE CON UN JSON VÁLIDO CON ESA ESTRUCTURA.");
+
+            if (conversationHistory != null && conversationHistory.Length > 0)
+            {
+                sb.AppendLine("\n--- HISTORIAL DE ESTA CONVERSACIÓN HASTA AHORA ---");
+                foreach (var line in conversationHistory)
+                {
+                    sb.AppendLine(line);
+                }
+                sb.AppendLine("--------------------------------------------------");
+            }
+            else
+            {
+                sb.AppendLine("\n(Esta es la primera línea de la conversación. Inicia el diálogo de forma natural)");
             }
 
             return sb.ToString();

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Threading.Tasks;
 using StardewModdingAPI;
 using StardewLivingValley.Configuration;
+using StardewLivingValley.Models;
 
 namespace StardewLivingValley.Brain
 {
@@ -169,6 +170,54 @@ namespace StardewLivingValley.Brain
             {
                 _logger.Log($"Excepción Venice API: {ex.Message}", LogLevel.Error);
                 return "[Error interno en la petición HTTP]";
+            }
+        }
+        public async Task<string> SendRawRequestAsync(List<VeniceMessage> messages, string modelName, CancellationToken cancellationToken)
+        {
+            string apiKey = _config.VeniceApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "INGRESA_TU_API_KEY_AQUI")
+            {
+                return "{}";
+            }
+
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var requestPayload = new VeniceRequest
+            {
+                Model = modelName,
+                MaxTokens = 2000,
+                Temperature = 0.7,
+                VeniceParameters = new VeniceParameters { IncludeVeniceSystemPrompt = false },
+                Messages = messages
+            };
+
+            string requestJson = System.Text.Json.JsonSerializer.Serialize(requestPayload, new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+            var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+            try
+            {
+                var response = await _httpClient.PostAsync(ApiUrl, content, cancellationToken);
+                string responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Log($"Venice API Error {response.StatusCode}: {responseString}", LogLevel.Error);
+                    return "{}";
+                }
+
+                using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(responseString);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                {
+                    var message = choices[0].GetProperty("message");
+                    return message.GetProperty("content").GetString()?.Trim() ?? "{}";
+                }
+                return "{}";
+            }
+            catch (Exception ex)
+            {
+                _logger.Log($"Excepción Venice API: {ex.Message}", LogLevel.Error);
+                return "{}";
             }
         }
     }

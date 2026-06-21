@@ -49,11 +49,13 @@ namespace StardewLivingValley.Brain
         private readonly IMonitor _logger;
 
         private Dictionary<string, NpcKnowledgeProfile> _knowledgeCache = new Dictionary<string, NpcKnowledgeProfile>();
+        private readonly XmlBrainParser _xmlParser;
 
         public KnowledgeCortex(IModHelper helper, IMonitor logger)
         {
             _helper = helper;
             _logger = logger;
+            _xmlParser = new XmlBrainParser(logger);
             LoadAllKnowledge();
         }
 
@@ -132,10 +134,24 @@ namespace StardewLivingValley.Brain
             File.WriteAllText(profilePath, JsonSerializer.Serialize(profile, options));
         }
 
-        public NpcKnowledgeProfile? GetStaticProfile(string npcName)
+        public NpcKnowledgeProfile? GetDynamicProfile(string npcName, int currentHearts)
         {
             if (_knowledgeCache.TryGetValue(npcName.ToLowerInvariant(), out var profile))
-                return profile;
+            {
+                // Create a clone of the profile to avoid modifying the cached version permanently
+                var dynamicProfile = new NpcKnowledgeProfile
+                {
+                    Role = _xmlParser.ProcessBrainXml(profile.Role, npcName, currentHearts),
+                    Persona = profile.Persona,
+                    Speech = profile.Speech,
+                    Ties = profile.Ties,
+                    Boundaries = profile.Boundaries,
+                    ForbiddenClaims = new List<string>(profile.ForbiddenClaims),
+                    AllowedGifts = new Dictionary<string, string>(profile.AllowedGifts),
+                    DynamicLore = profile.DynamicLore // Kept as reference, it's evaluated separately
+                };
+                return dynamicProfile;
+            }
             
             // Fallback genérico si no existe
             return new NpcKnowledgeProfile 

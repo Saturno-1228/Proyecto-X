@@ -50,7 +50,7 @@ namespace StardewLivingValley.Brain
         }
 
         // Se llama al interactuar para obtener el contexto
-        public string GetObservationContext(NPC npc)
+        public string GetObservationContext(NPC npc, bool isTalkingToPlayer = true)
         {
             UpdateObservationLogIfApplicable(npc);
             
@@ -59,10 +59,13 @@ namespace StardewLivingValley.Brain
             string context = "";
 
             // 1. Conocimiento Inmediato (Sentidos en Tiempo Real)
-            string immediateContext = GetImmediateSenses(npc);
-            if (!string.IsNullOrEmpty(immediateContext))
+            if (isTalkingToPlayer)
             {
-                context += $"- OBSERVACIÓN EN TIEMPO REAL (Frente a ti): {immediateContext}\n";
+                string immediateContext = GetImmediateSenses(npc);
+                if (!string.IsNullOrEmpty(immediateContext))
+                {
+                    context += $"- OBSERVACIÓN EN TIEMPO REAL (Frente a ti): {immediateContext}\n";
+                }
             }
 
             // 2. Conocimiento Sensorial Guardado (Lo que vio en la granja o casa)

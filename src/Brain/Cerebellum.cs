@@ -20,6 +20,7 @@ namespace StardewLivingValley.Brain
             WalkingToTarget,
             Inspecting,
             WalkingBack,
+            ChasingPlayer,
             Finished
         }
 
@@ -27,6 +28,7 @@ namespace StardewLivingValley.Brain
         private NPC? _activeNpc;
         private string _targetLocationName = "";
         private Action? _onCompleteCallback;
+        private Action<string>? _onDataGatheredCallback;
         private Hippocampus? _Hippocampus;
         private SensoryCortex? _SensoryCortex;
         
@@ -36,15 +38,15 @@ namespace StardewLivingValley.Brain
         private string _inspectionReport = "";
         private bool _originalDestroyObjects = true;
 
-        // Sistema de estabilización post-warp
+        // Sistema de estabilizaciÃƒÆ’Ã‚Â³n post-warp
         private int _postWarpTicks = 0;
         private Action? _postWarpAction = null;
         private int _routingGraceTicks = 0;
 
-        // Detección de warps automáticos del engine
+        // DetecciÃƒÆ’Ã‚Â³n de warps automÃƒÆ’Ã‚Â¡ticos del engine
         private string _npcStartMap = "";
 
-        // Auto-recuperación de atascos
+        // Auto-recuperaciÃƒÆ’Ã‚Â³n de atascos
         private Point _lastPosition;
         private int _ticksStuck = 0;
         private int _maxRetries = 3;
@@ -72,7 +74,7 @@ namespace StardewLivingValley.Brain
             return _inspectionReport;
         }
 
-        public void StartInspection(NPC npc, string targetLocation, Action onComplete)
+        public void StartInspection(NPC npc, string targetLocation, Action<string> onDataGathered, Action onComplete)
         {
             if (_currentState != ActionState.Idle)
             {
@@ -80,8 +82,16 @@ namespace StardewLivingValley.Brain
                 return;
             }
 
+            // Guarda defensiva: si otro mod ya controla este NPC, no interferir
+            if (npc.controller != null)
+            {
+                _logger.Log($"[ActionController] {npc.Name} ya tiene un PathFindController activo (posiblemente de otro mod). Abortando para evitar conflictos.", LogLevel.Warn);
+                return;
+            }
+
             _activeNpc = npc;
             _targetLocationName = targetLocation;
+            _onDataGatheredCallback = onDataGathered;
             _onCompleteCallback = onComplete;
 
             _originalPlayerMap = Game1.player.currentLocation.NameOrUniqueName;
@@ -262,20 +272,28 @@ namespace StardewLivingValley.Brain
                       }
                       else
                       {
-                           _logger.Log($"[ActionController] MotorCortex falló completamente en {targetMap} hacia {targetTile}. Cancelando misión.", LogLevel.Warn);
-                           if (isReturning)
+                           if (isReturning && targetMap == Game1.player.currentLocation?.NameOrUniqueName)
                            {
-                               StoreAbandonmentMemory();
-                               FinishAction();
+                               _logger.Log($"[ActionController] MotorCortex falló hacia el tile original en {targetMap}, pero estamos en el mismo mapa que el jugador. Pasando a persecución directa (ChasingPlayer).", LogLevel.Warn);
+                               _currentState = ActionState.ChasingPlayer;
                            }
                            else
                            {
-                               _currentState = ActionState.WalkingBack;
-                               StoreAbandonmentMemoryBlocked("un misterioso bloqueo inexplicable");
-                               if (!TryStartNativeRouting(npc, _originalPlayerMap, true))
+                               _logger.Log($"[ActionController] MotorCortex falló completamente en {targetMap} hacia {targetTile}. Cancelando misión.", LogLevel.Warn);
+                               if (isReturning)
                                {
                                    StoreAbandonmentMemory();
                                    FinishAction();
+                               }
+                               else
+                               {
+                                   _currentState = ActionState.WalkingBack;
+                                   StoreAbandonmentMemoryBlocked("un misterioso bloqueo inexplicable");
+                                   if (!TryStartNativeRouting(npc, _originalPlayerMap, true))
+                                   {
+                                       StoreAbandonmentMemory();
+                                       FinishAction();
+                                   }
                                }
                            }
                       }
@@ -309,10 +327,10 @@ namespace StardewLivingValley.Brain
                       
                       _logger.Log($"[ActionController] No se encontró ruta nativa hacia {targetMap} desde {npc.currentLocation.NameOrUniqueName}. Usando fallback...", LogLevel.Warn);
                        
-                       // Caso especial: Farm → FarmHouse (la puerta no es un warp regular, es una BuildingDoor)
+                       // Caso especial: Farm -> FarmHouse (la puerta no es un warp regular, es una BuildingDoor)
                        if (targetMap == "FarmHouse" && npc.currentLocation.Name == "Farm")
                        {
-                            _logger.Log($"[ActionController] Caso especial Farm→FarmHouse. Buscando puerta del edificio...", LogLevel.Info);
+                            _logger.Log($"[ActionController] Caso especial Farm->FarmHouse. Buscando puerta del edificio...", LogLevel.Info);
                             var farmHouseLoc = Game1.getLocationFromName("FarmHouse");
                             if (farmHouseLoc != null)
                             {
@@ -440,7 +458,14 @@ namespace StardewLivingValley.Brain
             }
             else if (_currentState == ActionState.WalkingBack)
             {
-                 _currentState = ActionState.Finished;
+                 if (_activeNpc != null && Game1.player.currentLocation != null && _activeNpc.currentLocation.NameOrUniqueName == Game1.player.currentLocation.NameOrUniqueName)
+                 {
+                     _currentState = ActionState.ChasingPlayer;
+                 }
+                 else
+                 {
+                     _currentState = ActionState.Finished;
+                 }
             }
         }
 
@@ -535,7 +560,7 @@ namespace StardewLivingValley.Brain
                          if (!string.IsNullOrEmpty(_npcStartMap) && currentMap != _npcStartMap && !string.IsNullOrEmpty(currentMap))
                          {
                              string targetMap = _currentState == ActionState.WalkingBack ? _originalPlayerMap : _targetLocationName;
-                             _logger.Log($"[ActionController] Warp automático detectado: {_npcStartMap} → {currentMap}. Re-enrutando hacia {targetMap}...", LogLevel.Info);
+                             _logger.Log($"[ActionController] Warp automático detectado: {_npcStartMap} -> {currentMap}. Re-enrutando hacia {targetMap}...", LogLevel.Info);
                              _npcStartMap = currentMap;
                              _postWarpTicks = 15;
                              _postWarpAction = () => TryStartNativeRouting(_activeNpc!, targetMap, _currentState == ActionState.WalkingBack);
@@ -556,6 +581,7 @@ namespace StardewLivingValley.Brain
                     {
                         // Escanear el interior del edificio para reportar datos REALES
                         _inspectionReport = ScanBuildingInterior(_activeNpc.currentLocation);
+                        _onDataGatheredCallback?.Invoke(_inspectionReport);
                         _logger.Log($"[ActionController] Reporte de inspección: {_inspectionReport}", LogLevel.Info);
 
                         _logger.Log($"[ActionController] Inspección terminada. Calculando ruta de regreso.", LogLevel.Info);
@@ -567,6 +593,33 @@ namespace StardewLivingValley.Brain
                             _logger.Log($"[ActionController] No se pudo volver. Guardando memoria.", LogLevel.Warn);
                             StoreAbandonmentMemory();
                             FinishAction();
+                        }
+                    }
+                    break;
+
+                case ActionState.ChasingPlayer:
+                    if (_activeNpc == null || Game1.player.currentLocation == null) return;
+                    if (_activeNpc.currentLocation.NameOrUniqueName != Game1.player.currentLocation.NameOrUniqueName)
+                    {
+                        StoreAbandonmentMemory();
+                        FinishAction();
+                        break;
+                    }
+                    float distance = Vector2.Distance(_activeNpc.Tile, Game1.player.Tile);
+                    if (distance <= 2f)
+                    {
+                        _activeNpc.Halt();
+                        _activeNpc.faceGeneralDirection(Game1.player.Position, 0, false, false);
+                        _currentState = ActionState.Finished;
+                        FinishAction();
+                    }
+                    else
+                    {
+                        _stateTimer -= Game1.currentGameTime.ElapsedGameTime.TotalMilliseconds;
+                        if (_stateTimer <= 0)
+                        {
+                            _stateTimer = 1000;
+                            _activeNpc.controller = new PathFindController(_activeNpc, _activeNpc.currentLocation, Game1.player.TilePoint, -1, (c, l) => { });
                         }
                     }
                     break;
@@ -594,7 +647,7 @@ namespace StardewLivingValley.Brain
                 {
                     baseMsg += "Pero cuando regresé a buscarte al lugar donde te vi por última vez, ya no estabas ahí. Tuve que seguir con mis cosas.";
                 }
-                _Hippocampus.SavePlayerMemory(_activeNpc.Name, baseMsg);
+                _Hippocampus.SaveNpcMemory(_activeNpc.Name, baseMsg);
             }
         }
 
@@ -602,7 +655,7 @@ namespace StardewLivingValley.Brain
         {
             if (_activeNpc != null && _Hippocampus != null)
             {
-                _Hippocampus.SavePlayerMemory(_activeNpc.Name, $"Intenté ir a revisar {_targetLocationName} como me pediste, pero el camino estaba completamente bloqueado por {obstacleName} y no pude pasar. Tuve que regresar de inmediato.");
+                _Hippocampus.SaveNpcMemory(_activeNpc.Name, $"Intenté ir a revisar {_targetLocationName} como me pediste, pero el camino estaba completamente bloqueado por {obstacleName} y no pude pasar. Tuve que regresar de inmediato.");
             }
         }
 
@@ -616,11 +669,18 @@ namespace StardewLivingValley.Brain
             
             if (_activeNpc != null)
             {
-                 // Restaurar la propiedad de destrucción de objetos
-                 _activeNpc.willDestroyObjectsUnderfoot = _originalDestroyObjects;
-                 _activeNpc.DirectionsToNewLocation = null;
-                 _activeNpc.controller = null;
-                 _activeNpc.checkSchedule(Game1.timeOfDay); // Resume regular schedule
+                try
+                {
+                    // Restaurar la propiedad de destrucción de objetos
+                    _activeNpc.willDestroyObjectsUnderfoot = _originalDestroyObjects;
+                    _activeNpc.DirectionsToNewLocation = null;
+                    if (_activeNpc.controller != null) _activeNpc.controller = null;
+                    _activeNpc.checkSchedule(Game1.timeOfDay); // Resume regular schedule
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"[ActionController] Error al restaurar estado de {_activeNpc.Name}: {ex.Message}. El NPC debería recuperarse en el próximo cambio de hora.", LogLevel.Warn);
+                }
             }
             _activeNpc = null;
         }

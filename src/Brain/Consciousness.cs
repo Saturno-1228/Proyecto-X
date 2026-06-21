@@ -92,8 +92,8 @@ namespace StardewLivingValley.Brain
                 var currentSeason = Game1.currentSeason;
                 var currentHearts = Game1.player.getFriendshipHeartLevelForNPC(npcName);
 
-                // 1. Obtener Perfil Estático
-                var profile = _topicRouter.GetStaticProfile(npcName);
+                // 1. Obtener Perfil (XML)
+                var profile = _topicRouter.GetDynamicProfile(npcName, currentHearts);
                 string staticPrompt = profile != null ? _contextBuilder.BuildStaticSystemPrompt(profile) : "ERES UN ALDEANO DE STARDEW VALLEY.";
 
                 // 2. Obtener Lore Dinámico (KRS)
@@ -140,32 +140,8 @@ namespace StardewLivingValley.Brain
                     relationshipRule = "Apenas lo conoces. Mantén distancia, sé muy breve y evita cualquier lenguaje afectuoso o confianzudo.";
                 }
 
-                // Inyectar contexto global de relaciones (poligamia/infidelidad)
-                string spouse = Game1.player.spouse;
-                List<string> datingOthers = new List<string>();
-                
-                foreach (var kvp in Game1.player.friendshipData.Pairs)
-                {
-                    if (kvp.Key != npcName && kvp.Value.IsDating())
-                    {
-                        datingOthers.Add(kvp.Key);
-                    }
-                }
-
-                string dramaContext = "";
-                if (!string.IsNullOrEmpty(spouse) && spouse != npcName)
-                {
-                    dramaContext += $" OJO: El jugador ESTÁ CASADO con {spouse} actualmente.";
-                }
-                if (datingOthers.Count > 0)
-                {
-                    dramaContext += $" OJO: El jugador también es novio(a) de: {string.Join(", ", datingOthers)}.";
-                }
-
-                if (!string.IsNullOrEmpty(dramaContext))
-                {
-                    relationshipRule += " " + dramaContext.Trim() + " Ten esto en cuenta y actúa según tu personalidad (celos, secreto, indiferencia, etc).";
-                }
+                // El contexto de rumores/infidelidad cruzada fue eliminado para mantener la inmersión (Restricción de Conocimiento).
+                // Los NPCs solo sabrán si el jugador sale con otras personas si lo observan físicamente o se enteran mediante un sistema de chismes futuro.
 
                 // Evaluar cooldown de 4 horas
                 bool isCooldownActive = false;
@@ -179,24 +155,41 @@ namespace StardewLivingValley.Brain
 
                 // Obtener datos de tiempo y agenda para el contexto
                 string timeConstraintRule = "";
+                string scheduleString = "";
+                string currentDate = $"Día {Game1.dayOfMonth} de {Game1.currentSeason}, Año {Game1.year}";
+
+                string FormatStardewTime(int time)
+                {
+                    int hours = time / 100;
+                    int minutes = time % 100;
+                    string amPm = hours < 12 || hours >= 24 ? "AM" : "PM";
+                    int displayHours = hours % 12;
+                    if (displayHours == 0) displayHours = 12;
+                    return $"{displayHours}:{minutes:D2} {amPm}";
+                }
+
+                string formattedCurrentTime = FormatStardewTime(Game1.timeOfDay);
+
                 if (_activeNpc.Schedule != null && _activeNpc.Schedule.Count > 0)
                 {
+                    var sbSchedule = new System.Text.StringBuilder();
                     int nextActivityTime = 2600;
                     foreach (var key in Enumerable.OrderBy(_activeNpc.Schedule.Keys, k => k))
                     {
+                        var pathDesc = _activeNpc.Schedule[key];
+                        string behavior = !string.IsNullOrEmpty(pathDesc.endOfRouteBehavior) ? $" (Haciendo: {pathDesc.endOfRouteBehavior})" : "";
+                        string target = !string.IsNullOrEmpty(pathDesc.targetLocationName) ? pathDesc.targetLocationName : "Otro lugar";
+                        sbSchedule.AppendLine($"- A las {FormatStardewTime(key)}: Ir a {target}{behavior}");
                         if (key > Game1.timeOfDay && key < nextActivityTime)
                         {
                             nextActivityTime = key;
-                            break;
                         }
                     }
+                    scheduleString = sbSchedule.ToString();
 
                     if (nextActivityTime < 2600)
                     {
-                        // Estimar velocidad de caminata: Velocidad base 2. En SV, 10 min de juego son ~7 seg reales.
-                        // Los NPCs toman un tiempo considerable cruzando mapas y abriendo puertas.
-                        // Calculamos aproximadamente que una caminata corta a la granja puede tomar entre 30 a 50 min del juego (ida y vuelta).
-                        timeConstraintRule = $"Tu próxima actividad programada en tu agenda es a las {nextActivityTime} (la hora actual es {Game1.timeOfDay}). REGLA ESTRICTA DE TIEMPO: Moverte hacia otro lugar caminando de ida y vuelta te tomará un mínimo de 40 a 60 minutos de tiempo del juego. Evalúa mentalmente si tienes el tiempo suficiente para ir a donde te pidan y volver sin faltar a tu cita de las {nextActivityTime} (excepto si es urgente, o si es algo vital en tu personalidad ignorarla). Si sientes que no te dará tiempo de ir y regresar (por ejemplo, si te piden ir a la Granja y tu evento es en 30 minutos), debes decirle al jugador creativamente que no puedes ir porque se te hace tarde y tienes cosas que hacer, o que podrías ir pero tendrías que apresurarte y podrías llegar tarde.";
+                        timeConstraintRule = $"Tu próxima actividad programada en tu agenda es a las {FormatStardewTime(nextActivityTime)} (la hora actual es {formattedCurrentTime}). REGLA ESTRICTA DE TIEMPO: Moverte hacia otro lugar caminando de ida y vuelta te tomará un mínimo de 40 a 60 minutos de tiempo del juego. Evalúa mentalmente si tienes el tiempo suficiente para ir a donde te pidan y volver sin faltar a tu cita de las {FormatStardewTime(nextActivityTime)} (excepto si es urgente, o si es algo vital en tu personalidad ignorarla). Si sientes que no te dará tiempo de ir y regresar (por ejemplo, si te piden ir a la Granja y tu evento es en 30 minutos), debes decirle al jugador creativamente que no puedes ir porque se te hace tarde y tienes cosas que hacer, o que podrías ir pero tendrías que apresurarte y podrías llegar tarde.";
                     }
                 }
 
@@ -204,21 +197,27 @@ namespace StardewLivingValley.Brain
                 var envState = new EnvironmentState
                 {
                     Weather = Game1.isRaining ? "Lloviendo" : "Despejado",
-                    TimeOfDay = Game1.timeOfDay.ToString(),
+                    TimeOfDay = formattedCurrentTime,
+                    CurrentDate = currentDate,
                     CurrentLocation = Game1.player.currentLocation.Name,
                     FriendshipHearts = currentHearts,
                     HeldItem = Game1.player.ActiveObject?.DisplayName ?? "Ninguno",
                     RelationshipStatus = relationshipStatus,
                     RelationshipRule = relationshipRule,
                     IsGiftCooldownActive = isCooldownActive,
-                    TimeConstraintRule = timeConstraintRule
+                    TimeConstraintRule = timeConstraintRule,
+                    DailySchedule = scheduleString
                 };
 
                 // 4. Obtener Perfil del Jugador
                 var userProfile = _Hippocampus.GetUserProfile(npcName);
                 var activeMemories = _Hippocampus.GetActiveMemories(npcName);
+                var longTermMemories = _Hippocampus.GetLongTermMemories(npcName);
+                
+                var allMemories = new System.Collections.Generic.List<string>(longTermMemories);
+                allMemories.AddRange(activeMemories);
 
-                string dynamicContext = _contextBuilder.BuildDynamicSystemContext(envState, userProfile, dynamicLore, activeMemories);
+                string dynamicContext = _contextBuilder.BuildDynamicSystemContext(envState, userProfile, dynamicLore, allMemories.ToArray());
 
                 // Inyectar el Cerebro Sensorial y Profesional
                 string brainContext = _SensoryCortex.GetObservationContext(_activeNpc);
@@ -249,12 +248,49 @@ namespace StardewLivingValley.Brain
 
                 string cleanResponse = string.IsNullOrWhiteSpace(response) ? "..." : response;
 
-                // Interceptar comando de regalo
-                var giveItemMatch = Regex.Match(cleanResponse, @"\[give_item:(.*?)\]", RegexOptions.IgnoreCase);
-                if (giveItemMatch.Success)
+                // LOG PARA DEPUBACIÓN DEL USUARIO (SMAPI CONSOLE)
+                _logger.Log($"[Venice AI Response Raw] {npcName}: {cleanResponse}", LogLevel.Debug);
+
+                string cleanedJson = cleanResponse.Trim();
+                if (cleanedJson.StartsWith("```json", StringComparison.OrdinalIgnoreCase)) cleanedJson = cleanedJson.Substring(7);
+                if (cleanedJson.StartsWith("```")) cleanedJson = cleanedJson.Substring(3);
+                if (cleanedJson.EndsWith("```")) cleanedJson = cleanedJson.Substring(0, cleanedJson.Length - 3);
+                cleanedJson = cleanedJson.Trim();
+
+                VeniceResponse? parsedResponse = null;
+                try
                 {
-                    string itemName = giveItemMatch.Groups[1].Value.Trim();
-                    cleanResponse = cleanResponse.Replace(giveItemMatch.Value, "").Trim();
+                    var options = new System.Text.Json.JsonSerializerOptions { 
+                        PropertyNameCaseInsensitive = true,
+                        ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                        AllowTrailingCommas = true
+                    };
+                    parsedResponse = System.Text.Json.JsonSerializer.Deserialize<VeniceResponse>(cleanedJson, options);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"[Consciousness] Falló el parseo JSON. Activando Fallback Anti-Crasheo. Error: {ex.Message}", LogLevel.Warn);
+                }
+
+                if (parsedResponse == null || string.IsNullOrWhiteSpace(parsedResponse.VisibleText))
+                {
+                    parsedResponse = new VeniceResponse
+                    {
+                        Emotion = 0,
+                        VisibleText = cleanResponse,
+                        ClaimLevel = "none"
+                    };
+                }
+
+                cleanResponse = $"[{parsedResponse.Emotion}] {parsedResponse.VisibleText}";
+                
+                string actionType = parsedResponse.Action?.Type ?? "";
+                string actionTarget = parsedResponse.Action?.Target ?? "";
+
+                // Interceptar comando de regalo
+                if (actionType.Equals("give_item", StringComparison.OrdinalIgnoreCase))
+                {
+                    string itemName = actionTarget.Trim();
                     
                     if (profile != null && profile.AllowedGifts != null && profile.AllowedGifts.TryGetValue(itemName, out string? itemId))
                     {
@@ -283,11 +319,9 @@ namespace StardewLivingValley.Brain
                 }
 
                 // Interceptar comando de movimiento
-                var goToMatch = Regex.Match(cleanResponse, @"\[go_to:(.*?)\]", RegexOptions.IgnoreCase);
-                if (goToMatch.Success)
+                else if (actionType.Equals("go_to", StringComparison.OrdinalIgnoreCase))
                 {
-                    string targetLocation = goToMatch.Groups[1].Value.Trim();
-                    cleanResponse = cleanResponse.Replace(goToMatch.Value, "").Trim();
+                    string targetLocation = actionTarget.Trim();
                     
                     NPC npcToInspect = _activeNpc;
                     
@@ -303,7 +337,11 @@ namespace StardewLivingValley.Brain
                             npcToInspect.CurrentDialogue.Clear();
                             npcToInspect.movementPause = 0;
 
-                            _actionController.StartInspection(npcToInspect, targetLocation, () => {
+                            _actionController.StartInspection(npcToInspect, targetLocation, 
+                                (reportData) => {
+                                    _logger.Log($"[Consciousness] Datos de inspección recibidos: {reportData}", LogLevel.Trace);
+                                },
+                                () => {
                                 _logger.Log($"[Consciousness] Callback de inspección. NPC: {npcToInspect.Name}, Map NPC: {npcToInspect.currentLocation?.NameOrUniqueName}, Map Player: {Game1.player.currentLocation?.NameOrUniqueName}", LogLevel.Info);
                                 
                                 if (npcToInspect.currentLocation == null || Game1.player.currentLocation == null)
@@ -326,6 +364,9 @@ namespace StardewLivingValley.Brain
                                         ? inspectionReport
                                         : "*Te observa esperando a que le cuentes lo que viste*";
                                     
+                                    // Guardarlo en la memoria a largo plazo
+                                    _Hippocampus.SaveNpcMemory(npcToInspect.Name, $"Fui a revisar {targetLocation} y te di este reporte: {reopenMessage}");
+
                                     _reopenDialogueCallback?.Invoke(npcToInspect, reopenMessage);
                                 }
                                 else

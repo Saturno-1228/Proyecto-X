@@ -78,10 +78,11 @@ namespace StardewLivingValley.UI
             _options.Add(new ConfigOption("Stardew Living Valley", ConfigOptionType.SectionTitle));
 
             _options.Add(new ConfigOption("Clave de Acceso", ConfigOptionType.ApiKeyEntry, slotWidth));
-            if (_options[_options.Count - 1].ApiEditor != null)
+            var apiEditor = _options[_options.Count - 1].ApiEditor;
+            if (apiEditor != null)
             {
-                _options[_options.Count - 1].ApiEditor.Text = _config.VeniceApiKey ?? "";
-                _options[_options.Count - 1].ApiEditor.CursorPosition = _options[_options.Count - 1].ApiEditor.Text.Length;
+                apiEditor.Text = _config.VeniceApiKey ?? "";
+                apiEditor.CursorPosition = apiEditor.Text.Length;
             }
 
             _options.Add(new ConfigOption("Controles:", ConfigOptionType.SectionTitle));

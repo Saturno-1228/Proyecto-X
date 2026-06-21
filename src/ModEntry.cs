@@ -20,6 +20,7 @@ namespace StardewLivingValley
         private NPCDialogueMenu? _activeMenu;
         private LimbicSystem? _LimbicSystem;
         private Cerebellum? _actionController;
+        private PairEmotionService? _pairEmotionService;
         private ModConfig? _config;
 
         /// <summary>The mod entry point, called after the mod is first loaded.</summary>
@@ -31,7 +32,7 @@ namespace StardewLivingValley
             _config = helper.ReadConfig<ModConfig>();
             
             var veniceApi = new NeuralLink(_config, this.Monitor);
-            var Hippocampus = new Hippocampus();
+            var Hippocampus = new Hippocampus(helper.DirectoryPath);
             var contextBuilder = new Subconscious();
             var topicRouter = new KnowledgeCortex(helper, this.Monitor);
             _LimbicSystem = new LimbicSystem(helper, this.Monitor);
@@ -42,10 +43,16 @@ namespace StardewLivingValley
             _actionController.SetSensoryCortex(SensoryCortex);
             
             _Consciousness = new Consciousness(this.Monitor, veniceApi, Hippocampus, contextBuilder, topicRouter, SensoryCortex, _actionController, _config);
+            
+            _pairEmotionService = new PairEmotionService(this.Monitor, helper.DirectoryPath);
+            var playbackManager = new ConversationPlaybackManager(helper, this.Monitor);
+            var socialInteractionManager = new SocialInteractionManager(helper, this.Monitor, veniceApi, contextBuilder, playbackManager, Hippocampus, topicRouter, SensoryCortex, _pairEmotionService, _config);
             _Consciousness.RegisterReopenCallback(ReopenDialogue);
 
             helper.Events.Input.ButtonPressed += OnButtonPressed;
             helper.Events.Display.MenuChanged += OnMenuChanged;
+            helper.Events.GameLoop.DayStarted += OnDayStarted;
+            helper.Events.GameLoop.DayEnding += OnDayEnding;
         }
 
         private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
@@ -180,14 +187,22 @@ namespace StardewLivingValley
             _activeMenu = new StardewLivingValley.UI.NPCDialogueMenu(_activeNpc, _LimbicSystem!, OnMessageSubmitted);
             Game1.activeClickableMenu = _activeMenu;
             
-            // Pasar el reporte de inspección como contexto del sistema para la IA
-            _Consciousness?.StartInteraction(_activeNpc, _activeMenu, "");
-            // NO mostramos "..." — el menú se queda en estado "pensando" hasta que la API responda
-            // Esto evita que el usuario escriba algo que cancele la primera llamada API
+            // Iniciar la interacción en la consciencia para que guarde el historial
+            _Consciousness?.StartInteraction(_activeNpc, _activeMenu, initialMessage);
             
-            // Enviar el reporte como mensaje del "sistema" para que la IA responda basándose en datos reales
-            string contextMessage = $"[SISTEMA: Acabas de regresar de una misión de inspección. {initialMessage} Ahora cuéntale al jugador lo que encontraste de forma natural y breve, usando tu personalidad.]";
-            _Consciousness?.HandleChatAsync(contextMessage);
+            // Inyectar directamente la respuesta pre-generada en la interfaz
+            // ¡Ya no llamamos a HandleChatAsync para hacerle otra pregunta a la IA!
+            _activeMenu.ReceiveAiResponse(initialMessage);
+        }
+
+        private void OnDayStarted(object? sender, DayStartedEventArgs e)
+        {
+            _pairEmotionService?.Decay();
+        }
+
+        private void OnDayEnding(object? sender, DayEndingEventArgs e)
+        {
+            _pairEmotionService?.Save();
         }
     }
 }

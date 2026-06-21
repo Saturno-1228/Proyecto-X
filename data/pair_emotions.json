@@ -1,0 +1,110 @@
+{
+  "emily|haley": {
+    "family_tie": "Hermanas (Convivencia Diaria)",
+    "friendship": 70,
+    "trust": 65,
+    "anger": 10,
+    "awkwardness": 15,
+    "familiarity": 90,
+    "last_interaction_day": 0
+  },
+  "lewis|marnie": {
+    "family_tie": "Amantes en secreto",
+    "friendship": 85,
+    "trust": 50,
+    "anger": 0,
+    "awkwardness": 30,
+    "familiarity": 95,
+    "last_interaction_day": 0
+  },
+  "maru|sebastian": {
+    "family_tie": "Medio hermanos (Relación tensa)",
+    "friendship": 40,
+    "trust": 35,
+    "anger": 20,
+    "awkwardness": 25,
+    "familiarity": 85,
+    "last_interaction_day": 0
+  },
+  "caroline|abigail": {
+    "family_tie": "Madre e Hija (Conflictos de rebeldía)",
+    "friendship": 60,
+    "trust": 45,
+    "anger": 15,
+    "awkwardness": 20,
+    "familiarity": 95,
+    "last_interaction_day": 0
+  },
+  "abigail|pierre": {
+    "family_tie": "Padre e Hija",
+    "friendship": 55,
+    "trust": 40,
+    "anger": 10,
+    "awkwardness": 15,
+    "familiarity": 90,
+    "last_interaction_day": 0
+  },
+  "demetrius|robin": {
+    "family_tie": "Esposos (Matrimonio estable)",
+    "friendship": 80,
+    "trust": 75,
+    "anger": 5,
+    "awkwardness": 0,
+    "familiarity": 100,
+    "last_interaction_day": 0
+  },
+  "jodi|kent": {
+    "family_tie": "Esposos (Dificultades por TEPT de Kent)",
+    "friendship": 70,
+    "trust": 55,
+    "anger": 10,
+    "awkwardness": 20,
+    "familiarity": 90,
+    "last_interaction_day": 0
+  },
+  "jodi|sam": {
+    "family_tie": "Madre e Hijo",
+    "friendship": 75,
+    "trust": 65,
+    "anger": 5,
+    "awkwardness": 5,
+    "familiarity": 95,
+    "last_interaction_day": 0
+  },
+  "jodi|vincent": {
+    "family_tie": "Madre e Hijo",
+    "friendship": 85,
+    "trust": 80,
+    "anger": 0,
+    "awkwardness": 0,
+    "familiarity": 100,
+    "last_interaction_day": 0
+  },
+  "marnie|shane": {
+    "family_tie": "Tía y Sobrino",
+    "friendship": 65,
+    "trust": 50,
+    "anger": 10,
+    "awkwardness": 15,
+    "familiarity": 80,
+    "last_interaction_day": 0
+  },
+  "jas|marnie": {
+    "family_tie": "Tía y Sobrina",
+    "friendship": 80,
+    "trust": 75,
+    "anger": 0,
+    "awkwardness": 0,
+    "familiarity": 90,
+    "last_interaction_day": 0
+  },
+  "pam|penny": {
+    "family_tie": "Madre e Hija (Pam es alcohólica, Penny cuida de ella)",
+    "friendship": 55,
+    "trust": 40,
+    "anger": 15,
+    "awkwardness": 25,
+    "familiarity": 95,
+    "last_interaction_day": 0
+  }
+}
